@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid">
+
+    <!-- ============================================================ -->
+    <!-- IDENTITY PANEL — Shows this peer's name and fingerprint       -->
+    <!-- ============================================================ -->
+    <section class="card identity-card">
+        <h2 class="card-title">
+            <span class="card-icon">🪪</span> Identity
+        </h2>
+        <div class="card-body">
+            <div class="identity-row">
+                <span class="label">Peer ID</span>
+                <code id="identity-peer-id">{{ state.peer_id }}</code>
+            </div>
+            <div class="identity-row">
+                <span class="label">Fingerprint</span>
+                <code id="identity-fingerprint" class="fingerprint">
+                    {{ state.fingerprint or "(not generated yet — Phase 3)" }}
+                </code>
+            </div>
+            <div class="identity-row">
+                <span class="label">Status</span>
+                <span id="identity-status" class="badge badge-success">Online</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- PEER LIST PANEL — Discovered peers on the network             -->
+    <!-- ============================================================ -->
+    <section class="card peers-card">
+        <h2 class="card-title">
+            <span class="card-icon">👥</span> Peers
+            <button class="btn btn-sm btn-secondary" id="btn-refresh-peers"
+                    title="Refresh peer list">↻ Refresh</button>
+        </h2>
+        <div class="card-body">
+            <div id="peer-list" class="peer-list">
+                <!-- Populated by JS; placeholder shown if empty -->
+                <p class="empty-state">No peers discovered yet.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- SHARED FILES PANEL — Files this peer is sharing               -->
+    <!-- ============================================================ -->
+    <section class="card files-card">
+        <h2 class="card-title">
+            <span class="card-icon">📁</span> Shared Files
+        </h2>
+        <div class="card-body">
+            <!-- Add file form -->
+            <form id="add-file-form" class="inline-form">
+                <input type="text" name="filename" placeholder="filename.txt"
+                       class="input" id="add-file-input" required>
+                <button type="submit" class="btn btn-primary">+ Add</button>
+            </form>
+
+            <div id="file-list" class="file-list">
+                <!-- Populated by JS -->
+                <p class="empty-state">No files shared yet.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- REQUEST / SEND PANEL — Actions to request or push files       -->
+    <!-- ============================================================ -->
+    <section class="card actions-card">
+        <h2 class="card-title">
+            <span class="card-icon">📤</span> Request / Send
+        </h2>
+        <div class="card-body">
+            <!-- Request a file from a peer -->
+            <form id="request-file-form" class="action-form">
+                <h3>Request File</h3>
+                <input type="text" name="peer_id" placeholder="Peer ID" class="input" required>
+                <input type="text" name="filename" placeholder="filename.txt" class="input" required>
+                <button type="submit" class="btn btn-primary">Request</button>
+            </form>
+
+            <hr class="divider">
+
+            <!-- Send (push) a file to a peer -->
+            <form id="send-file-form" class="action-form">
+                <h3>Send File</h3>
+                <input type="text" name="peer_id" placeholder="Peer ID" class="input" required>
+                <input type="text" name="filename" placeholder="filename.txt" class="input" required>
+                <button type="submit" class="btn btn-accent">Send</button>
+            </form>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- CONSENT PANEL — Incoming requests needing approval            -->
+    <!-- ============================================================ -->
+    <section class="card consent-card">
+        <h2 class="card-title">
+            <span class="card-icon">⚠️</span> Consent Requests
+            <button class="btn btn-sm btn-secondary" id="btn-test-consent"
+                    title="Create a test consent request">🧪 Test</button>
+        </h2>
+        <div class="card-body">
+            <div id="consent-list" class="consent-list">
+                <p class="empty-state">No pending consent requests.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- STATUS LOG — Success/failure messages                         -->
+    <!-- ============================================================ -->
+    <section class="card status-card">
+        <h2 class="card-title">
+            <span class="card-icon">📋</span> Status Log
+        </h2>
+        <div class="card-body">
+            <div id="status-log" class="status-log">
+                <p class="empty-state">No messages yet.</p>
+            </div>
+        </div>
+    </section>
+
+</div>
+
+<!-- ================================================================ -->
+<!-- CONSENT MODAL — Full-screen overlay for consent prompts           -->
+<!-- ================================================================ -->
+<div id="consent-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog">
+        <h2 class="modal-title">Incoming Request</h2>
+        <p class="modal-body">
+            <strong id="modal-peer-name"></strong> wants to
+            <span id="modal-action"></span>
+            <code id="modal-filename"></code>
+        </p>
+        <div class="modal-actions">
+            <button class="btn btn-primary" id="modal-accept">✓ Accept</button>
+            <button class="btn btn-danger" id="modal-deny">✕ Deny</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

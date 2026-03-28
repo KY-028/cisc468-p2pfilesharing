@@ -1,0 +1,7 @@
+# CISC 468 — Secure P2P File Sharing
+# Core dependencies
+
+flask>=3.0              # Web framework for localhost UI
+cryptography>=42.0      # Crypto primitives (RSA, AES, HMAC, ECDH, KDF)
+zeroconf>=0.131         # mDNS peer discovery
+pytest>=8.0             # Testing framework
