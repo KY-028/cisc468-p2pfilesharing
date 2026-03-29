@@ -30,6 +30,17 @@ from app.crypto.keys import (
 )
 from app.network.transport import TCPServer, receive_message, send_message
 from app.network.discovery import PeerDiscovery
+from app.storage.files import scan_shared_directory
+from app.core.consent import (
+    handle_file_list_request,
+    handle_file_list_response,
+    handle_file_request,
+    handle_file_send,
+    handle_consent_request,
+    handle_consent_response,
+)
+from app.core.revocation import handle_revoke_key
+from app.core.protocol import MessageType
 
 # Set up logging
 logging.basicConfig(
@@ -154,12 +165,26 @@ def _handle_incoming_message(msg: dict, sock, addr) -> None:
     peer_id = msg.get("payload", {}).get("peer_id", "unknown")
     logger.info(f"Received {msg_type} from {peer_id}")
 
-    # For now, log all incoming messages. Protocol-specific handling
-    # will be added in later phases.
-    app_state.add_status(
-        f"Received {msg_type} from {peer_id} ({addr[0]}:{addr[1]})",
-        level="info"
-    )
+    # Route to the appropriate handler
+    handlers = {
+        MessageType.FILE_LIST_REQUEST:   handle_file_list_request,
+        MessageType.FILE_LIST_RESPONSE:  handle_file_list_response,
+        MessageType.FILE_REQUEST:        handle_file_request,
+        MessageType.FILE_SEND:           handle_file_send,
+        MessageType.CONSENT_REQUEST:     handle_consent_request,
+        MessageType.CONSENT_RESPONSE:    handle_consent_response,
+        MessageType.REVOKE_KEY:          handle_revoke_key,
+    }
+
+    handler = handlers.get(msg_type)
+    if handler:
+        handler(msg, sock, addr)
+    else:
+        # Log unhandled message types (key exchange, peer announce, etc.)
+        app_state.add_status(
+            f"Received {msg_type} from {peer_id} ({addr[0]}:{addr[1]})",
+            level="info"
+        )
 
 
 # ---------------------------------------------------------------------------

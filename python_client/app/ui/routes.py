@@ -11,8 +11,14 @@ Reading order: Read this THIRD (after state.py → main.py) to see all endpoints
 
 import time
 import uuid
+import os
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for
 from app.core.state import app_state
+from app.storage.files import (
+    add_file, remove_file, scan_shared_directory, get_shared_dir,
+    get_file_list_for_network, get_file_by_hash, get_file_by_name,
+)
+from app.storage.manifests import get_manifest, get_all_manifests
 
 # All UI routes are grouped under this blueprint.
 ui_blueprint = Blueprint("ui", __name__)
@@ -59,35 +65,51 @@ def refresh_peers():
 @ui_blueprint.route("/api/add-shared-file", methods=["POST"])
 def add_shared_file():
     """
-    Placeholder: Add a file to the local share list.
-    In Phase 5, this will hash the file and create a manifest entry.
+    Add a file to the local share list.
+    Accepts either a filename (must exist in shared/ dir) or scans the dir.
     """
     filename = request.form.get("filename", "").strip()
     if not filename:
         app_state.add_status("No filename provided.", level="error")
         return jsonify({"ok": False, "error": "filename is required"}), 400
 
-    # For now, create a dummy shared file record.
-    from app.core.state import SharedFile
-    dummy_file = SharedFile(
-        filename=filename,
-        filepath=f"/placeholder/{filename}",
-        size=0,
-        sha256_hash="0" * 64,
-        owner_id=app_state.peer_id,
-    )
-    app_state.shared_files.append(dummy_file)
-    app_state.add_status(f"Added '{filename}' to shared files. (placeholder)", level="success")
-    return jsonify({"ok": True, "filename": filename})
+    # Look for the file in the shared directory
+    shared_dir = get_shared_dir()
+    filepath = os.path.join(shared_dir, filename)
+
+    if not os.path.isfile(filepath):
+        app_state.add_status(
+            f"File '{filename}' not found in shared/ directory. "
+            f"Place files in: {shared_dir}",
+            level="error"
+        )
+        return jsonify({"ok": False, "error": f"File not found in {shared_dir}"}), 404
+
+    shared = add_file(filepath)
+    if shared:
+        app_state.add_status(
+            f"Sharing '{filename}' ({shared.size} bytes, hash={shared.sha256_hash[:12]}…)",
+            level="success"
+        )
+        return jsonify({"ok": True, "filename": filename, "hash": shared.sha256_hash})
+    else:
+        app_state.add_status(f"Failed to add '{filename}'.", level="error")
+        return jsonify({"ok": False, "error": "Failed to add file"}), 500
+
+
+@ui_blueprint.route("/api/scan-shared", methods=["POST"])
+def scan_shared():
+    """Scan the shared/ directory and add any new files."""
+    count = scan_shared_directory()
+    app_state.add_status(f"Scanned shared directory: {count} file(s) found.", level="info")
+    return jsonify({"ok": True, "files_found": count})
 
 
 @ui_blueprint.route("/api/remove-shared-file", methods=["POST"])
 def remove_shared_file():
     """Remove a file from the share list by filename."""
     filename = request.form.get("filename", "").strip()
-    before = len(app_state.shared_files)
-    app_state.shared_files = [f for f in app_state.shared_files if f.filename != filename]
-    if len(app_state.shared_files) < before:
+    if remove_file(filename):
         app_state.add_status(f"Removed '{filename}' from shared files.", level="info")
         return jsonify({"ok": True})
     else:
@@ -96,15 +118,13 @@ def remove_shared_file():
 
 
 # ---------------------------------------------------------------------------
-# File Request / Send (placeholder for Phase 6)
+# File Request / Send
 # ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/request-file", methods=["POST"])
 def request_file():
-    """
-    Placeholder: Request a file from a peer.
-    In Phase 6, this will send a FILE_REQUEST message to the peer.
-    """
+    """Send a FILE_REQUEST to a peer asking for a specific file."""
+    from app.core.consent import request_file_from_peer
     peer_id = request.form.get("peer_id", "").strip()
     filename = request.form.get("filename", "").strip()
 
@@ -112,19 +132,29 @@ def request_file():
         app_state.add_status("Peer ID and filename are required to request a file.", level="error")
         return jsonify({"ok": False, "error": "peer_id and filename required"}), 400
 
-    app_state.add_status(
-        f"Requested '{filename}' from peer '{peer_id}'. (placeholder — no network yet)",
-        level="info"
-    )
-    return jsonify({"ok": True, "peer_id": peer_id, "filename": filename})
+    record = request_file_from_peer(peer_id, filename)
+    if record:
+        return jsonify({"ok": True, "peer_id": peer_id, "filename": filename,
+                         "transfer_id": record.transfer_id})
+    else:
+        return jsonify({"ok": False, "error": "Failed to send request"}), 500
+
+
+@ui_blueprint.route("/api/request-file-list", methods=["POST"])
+def request_file_list():
+    """Request a file list from a specific peer."""
+    from app.core.consent import request_file_list_from_peer
+    peer_id = request.form.get("peer_id", "").strip()
+    if not peer_id:
+        return jsonify({"ok": False, "error": "peer_id required"}), 400
+    success = request_file_list_from_peer(peer_id)
+    return jsonify({"ok": success})
 
 
 @ui_blueprint.route("/api/send-file", methods=["POST"])
 def send_file():
-    """
-    Placeholder: Send a file to a peer (push).
-    In Phase 6, this will send a FILE_SEND offer to the peer.
-    """
+    """Send a consent request to a peer, offering to send them a file."""
+    from app.core.consent import _send_file_to_peer
     peer_id = request.form.get("peer_id", "").strip()
     filename = request.form.get("filename", "").strip()
 
@@ -132,15 +162,24 @@ def send_file():
         app_state.add_status("Peer ID and filename are required to send a file.", level="error")
         return jsonify({"ok": False, "error": "peer_id and filename required"}), 400
 
-    app_state.add_status(
-        f"Offered '{filename}' to peer '{peer_id}'. (placeholder — no network yet)",
-        level="info"
-    )
+    peer = app_state.peers.get(peer_id)
+    if not peer:
+        app_state.add_status(f"Unknown peer: {peer_id}", level="error")
+        return jsonify({"ok": False, "error": "Unknown peer"}), 404
+
+    shared = get_file_by_name(filename)
+    if not shared:
+        app_state.add_status(f"File '{filename}' not in shared files.", level="error")
+        return jsonify({"ok": False, "error": "File not shared"}), 404
+
+    # Send the file directly
+    _send_file_to_peer(peer_id, peer.address, peer.port,
+                        shared.filepath, shared.filename, shared.sha256_hash)
     return jsonify({"ok": True, "peer_id": peer_id, "filename": filename})
 
 
 # ---------------------------------------------------------------------------
-# Consent API (placeholder for Phase 6)
+# Consent API
 # ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/consent/<request_id>/<action>", methods=["POST"])
@@ -148,7 +187,9 @@ def handle_consent(request_id: str, action: str):
     """
     Accept or deny an incoming consent request.
     action must be 'accept' or 'deny'.
+    If accepted and it was a file_request, triggers file send.
     """
+    from app.core.consent import on_consent_approved
     if action not in ("accept", "deny"):
         return jsonify({"ok": False, "error": "action must be 'accept' or 'deny'"}), 400
 
@@ -164,6 +205,11 @@ def handle_consent(request_id: str, action: str):
         f"{verb} {consent.action} from '{consent.peer_name}' for '{consent.filename}'.",
         level="success" if approved else "info"
     )
+
+    # If approved and it was a file request, send the file
+    if approved:
+        on_consent_approved(request_id)
+
     return jsonify({"ok": True, "action": action, "request_id": request_id})
 
 
@@ -185,13 +231,46 @@ def test_consent():
 
 
 # ---------------------------------------------------------------------------
+# Key Rotation (Phase 10)
+# ---------------------------------------------------------------------------
+
+@ui_blueprint.route("/api/rotate-key", methods=["POST"])
+def rotate_key_route():
+    """Rotate the identity key and notify all known peers."""
+    from app.core.revocation import rotate_key
+    result = rotate_key()
+    return jsonify({"ok": True, **result})
+
+
+# ---------------------------------------------------------------------------
+# File Verification (Phase 9)
+# ---------------------------------------------------------------------------
+
+@ui_blueprint.route("/api/verify-file", methods=["POST"])
+def verify_file_route():
+    """Verify a file's owner signature (third-party verification)."""
+    from app.core.verification import verify_manifest_entry
+    peer_id = request.form.get("peer_id", "").strip()
+    filename = request.form.get("filename", "").strip()
+
+    if not peer_id or not filename:
+        return jsonify({"ok": False, "error": "peer_id and filename required"}), 400
+
+    result = verify_manifest_entry(peer_id, filename)
+    if result is None:
+        return jsonify({"ok": False, "error": "File not found in peer's manifest"}), 404
+
+    return jsonify({"ok": True, **result})
+
+
+# ---------------------------------------------------------------------------
 # Status API
 # ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/status")
 def get_status():
     """
-    Return the current status log and pending consents as JSON.
+    Return the current status log, peers, files, consents, and transfers.
     The frontend polls this to update the UI.
     """
     return jsonify({
@@ -214,8 +293,33 @@ def get_status():
                 "filename": f.filename,
                 "size": f.size,
                 "sha256_hash": f.sha256_hash,
+                "owner_id": f.owner_id,
             }
             for f in app_state.shared_files
+        ],
+        "peer_files": {
+            peer_id: [
+                {
+                    "filename": e.filename,
+                    "size": e.size,
+                    "sha256_hash": e.sha256_hash,
+                    "owner_id": e.owner_id,
+                }
+                for e in manifest.files
+            ]
+            for peer_id, manifest in get_all_manifests().items()
+        },
+        "transfers": [
+            {
+                "transfer_id": t.transfer_id,
+                "filename": t.filename,
+                "peer_id": t.peer_id,
+                "direction": t.direction,
+                "status": t.status,
+                "error": t.error,
+                "timestamp": t.timestamp,
+            }
+            for t in app_state.transfers
         ],
         "pending_consents": [
             {
@@ -234,6 +338,6 @@ def get_status():
                 "level": s.level,
                 "timestamp": s.timestamp,
             }
-            for s in reversed(app_state.status_log)  # newest first
+            for s in reversed(app_state.status_log)
         ],
     })
