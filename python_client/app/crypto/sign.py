@@ -43,8 +43,6 @@ def verify_signature(public_key, data: bytes, signature: bytes) -> bool:
     Verify an RSA-PSS signature.
 
     Returns True if the signature is valid, False otherwise.
-    Never raises an exception for invalid signatures — this makes
-    callers simpler (they just check the bool).
 
     Args:
         public_key: RSAPublicKey object (the alleged signer's key).
