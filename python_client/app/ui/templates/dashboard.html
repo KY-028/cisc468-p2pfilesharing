@@ -19,7 +19,7 @@
             <div class="identity-row">
                 <span class="label">Fingerprint</span>
                 <code id="identity-fingerprint" class="fingerprint">
-                    {{ state.fingerprint or "(not generated yet — Phase 3)" }}
+                    {{ state.fingerprint or "(generating…)" }}
                 </code>
             </div>
             <div class="identity-row">
@@ -102,8 +102,6 @@
     <section class="card consent-card">
         <h2 class="card-title">
             <span class="card-icon">⚠️</span> Consent Requests
-            <button class="btn btn-sm btn-secondary" id="btn-test-consent"
-                    title="Create a test consent request">🧪 Test</button>
         </h2>
         <div class="card-body">
             <div id="consent-list" class="consent-list">

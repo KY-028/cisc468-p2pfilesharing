@@ -85,9 +85,9 @@ class AppState:
         # In later phases, this will be tied to the RSA key pair.
         self.peer_id: str = f"peer-{uuid.uuid4().hex[:8]}"
         self.display_name: str = self.peer_id
-        self.public_key_pem: Optional[str] = None    # Set in Phase 3
-        self.private_key_pem: Optional[str] = None   # Set in Phase 3
-        self.fingerprint: Optional[str] = None       # Set in Phase 3
+        self.public_key_pem: Optional[str] = None    # RSA-2048 public key (PEM)
+        self.private_key_pem: Optional[str] = None   # RSA-2048 private key (PEM)
+        self.fingerprint: Optional[str] = None       # SHA-256 fingerprint of public key
 
         # --- Peers ---
         # Maps peer_id -> PeerInfo for all discovered peers.

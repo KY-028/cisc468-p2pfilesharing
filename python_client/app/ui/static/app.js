@@ -258,12 +258,6 @@ document.addEventListener("DOMContentLoaded", () => {
         await pollStatus();
     });
 
-    // --- Test consent button ---
-    document.getElementById("btn-test-consent").addEventListener("click", async () => {
-        await apiPost("/api/test-consent");
-        await pollStatus();
-    });
-
     // --- Consent modal buttons ---
     document.getElementById("modal-accept").addEventListener("click", () => respondConsent("accept"));
     document.getElementById("modal-deny").addEventListener("click", () => respondConsent("deny"));

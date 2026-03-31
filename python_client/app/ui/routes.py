@@ -3,7 +3,7 @@ routes.py — Flask routes for the web UI.
 
 All HTTP endpoints live here. This module handles:
   - Rendering the dashboard page
-  - Placeholder API endpoints for peer, file, and consent actions
+  - API endpoints for peer, file, and consent actions
   - Status message retrieval
 
 Reading order: Read this THIRD (after state.py → main.py) to see all endpoints.
@@ -45,21 +45,21 @@ def dashboard():
 
 
 # ---------------------------------------------------------------------------
-# Peer API (placeholder actions for Phase 1)
+# Peer API
 # ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/refresh-peers", methods=["POST"])
 def refresh_peers():
     """
-    Placeholder: Trigger peer discovery refresh.
-    In Phase 4, this will kick off an mDNS scan.
+    Trigger peer discovery refresh.
+    Posts a status message; actual discovery runs via mDNS in the background.
     """
-    app_state.add_status("Peer discovery refresh triggered. (placeholder — no network yet)", level="info")
+    app_state.add_status("Peer discovery refresh triggered.", level="info")
     return jsonify({"ok": True, "message": "Peer refresh triggered"})
 
 
 # ---------------------------------------------------------------------------
-# File API (placeholder actions for Phase 1)
+# File API
 # ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/add-shared-file", methods=["POST"])
@@ -213,21 +213,6 @@ def handle_consent(request_id: str, action: str):
     return jsonify({"ok": True, "action": action, "request_id": request_id})
 
 
-@ui_blueprint.route("/api/test-consent", methods=["POST"])
-def test_consent():
-    """
-    Debug helper: Create a fake consent request to test the modal.
-    Remove this in production.
-    """
-    req_id = app_state.add_consent_request(
-        peer_id="peer-test1234",
-        peer_name="TestPeer",
-        action="file_send",
-        filename="example.txt",
-        file_hash="abc123",
-    )
-    app_state.add_status("Test consent request created.", level="info")
-    return jsonify({"ok": True, "request_id": req_id})
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,7 @@ python_client/
     │   ├── state.py          # Central data model (singleton)
     │   ├── protocol.py       # Message schema, validation, serialization
     │   ├── session.py        # STS handshake state machine
+    │   ├── sessions.py       # Session manager (handshake integration + key store)
     │   ├── consent.py        # Consent-based file transfer handlers
     │   ├── verification.py   # Third-party file verification
     │   └── revocation.py     # Key rotation & revocation
@@ -73,7 +74,8 @@ python_client/
 | **state.py** | Singleton `AppState` holding all runtime data: peers, shared files, transfers, consents, status log. Every other module reads/writes through this. |
 | **protocol.py** | Single source of truth for the wire format. Defines 14 message types, payload schemas, JSON serialization, base64 encoding for binary fields. |
 | **session.py** | Implements the **Station-to-Station (STS)** handshake: ephemeral ECDH (P-256) key exchange signed with long-term RSA-2048 keys. Produces a shared session key via HKDF. |
-| **consent.py** | Handles the full consent workflow: incoming FILE_REQUEST → consent prompt → user approves → file sent. Contains message handlers for 6 message types. |
+| **sessions.py** | Bridges the STS handshake with the transfer pipeline. `initiate_handshake()` performs the 3-message exchange over TCP. `handle_handshake_init()` responds to incoming handshakes. Caches session keys per peer so file transfers use AES-256-GCM encryption. |
+| **consent.py** | Handles the full consent workflow: incoming FILE_REQUEST → consent prompt → user approves → STS handshake (if needed) → AES-256-GCM encrypt → file sent. Contains message handlers for 6 message types. |
 | **verification.py** | Third-party file verification: checks file hash + validates the original owner's RSA-PSS signature, even when the file was relayed by a different peer. |
 | **revocation.py** | Key rotation: generates new RSA key, cross-signs with old key, notifies all contacts via REVOKE_KEY, handles incoming revocations with cross-signature validation. |
 
@@ -117,7 +119,7 @@ Wires everything together:
 1. Generates/loads RSA identity keys
 2. Starts the TCP server (background thread)
 3. Starts mDNS discovery (background thread)
-4. Registers the message dispatcher (routes 7 message types to handlers)
+4. Registers the message dispatcher (routes 8 message types to handlers, including KEY_EXCHANGE_INIT)
 5. Launches the Flask web UI
 
 ---
@@ -139,6 +141,7 @@ graph TB
         State["state.py<br/>AppState Singleton"]
         Protocol["protocol.py<br/>Message Schema"]
         Session["session.py<br/>STS Handshake"]
+        Sessions["sessions.py<br/>Session Manager"]
         Consent["consent.py<br/>Transfer Workflow"]
         Verify["verification.py<br/>3rd-Party Verify"]
         Revoke["revocation.py<br/>Key Rotation"]
@@ -181,6 +184,7 @@ graph TB
     Main --> Discovery
     Main --> Consent
     Main --> Revoke
+    Main --> Sessions
 
     Transport -->|"incoming msg"| Main
     Discovery -->|"peer found"| State
@@ -191,6 +195,13 @@ graph TB
     Consent --> Files
     Consent --> Manifests
     Consent --> Hash
+    Consent --> Sessions
+    Consent --> Encrypt
+
+    Sessions --> Session
+    Sessions --> Transport
+    Sessions --> Messages
+    Sessions --> State
 
     Verify --> State
     Verify --> Sign
@@ -201,6 +212,7 @@ graph TB
     Revoke --> Sign
     Revoke --> Messages
     Revoke --> Transport
+    Revoke --> Sessions
 
     Session --> Keys
     Session --> Sign
@@ -277,28 +289,29 @@ Read the codebase in this order. Each file builds on concepts from the files abo
 ### Layer 5: Application Logic
 | # | File | Why |
 |---|------|-----|
-| 14 | `core/session.py` | STS handshake — combines keys, signing, and KDF into a session. |
-| 15 | `core/consent.py` | File transfer workflow — the core business logic. |
-| 16 | `core/verification.py` | Third-party verification — combines signing, hashing, and manifests. |
-| 17 | `core/revocation.py` | Key rotation — combines key generation, signing, and transport. |
+| 14 | `core/session.py` | STS handshake state machine — combines keys, signing, and KDF into a session. |
+| 15 | `core/sessions.py` | Session manager — performs handshakes over TCP, caches session keys per peer. |
+| 16 | `core/consent.py` | File transfer workflow — the core business logic. Now encrypts/decrypts files using session keys. |
+| 17 | `core/verification.py` | Third-party verification — combines signing, hashing, and manifests. |
+| 18 | `core/revocation.py` | Key rotation — combines key generation, signing, and transport. Clears sessions on rotation. |
 
 ### Layer 6: Integration
 | # | File | Why |
 |---|------|-----|
-| 18 | `main.py` | Entry point — see how all modules are wired together. |
-| 19 | `ui/routes.py` | API layer — see how the UI calls into core logic. |
-| 20 | `ui/templates/dashboard.html` | HTML structure. |
-| 21 | `ui/static/app.js` | Frontend polling and UI rendering. |
+| 19 | `main.py` | Entry point — see how all modules are wired together. |
+| 20 | `ui/routes.py` | API layer — see how the UI calls into core logic. |
+| 21 | `ui/templates/dashboard.html` | HTML structure. |
+| 22 | `ui/static/app.js` | Frontend polling and UI rendering. |
 
 ### Layer 7: Tests
 | # | File | Why |
 |---|------|-----|
-| 22 | `tests/test_crypto.py` | Validates all crypto primitives + STS handshake. |
-| 23 | `tests/test_encrypt.py` | Validates AES-256-GCM including AAD binding. |
-| 24 | `tests/test_protocol.py` | Validates message creation, validation, and serialization. |
-| 25 | `tests/test_transport.py` | Validates TCP send/receive over real sockets. |
-| 26 | `tests/test_vault.py` | Validates vault encryption, file/JSON storage, trust records. |
-| 27 | `tests/test_verification.py` | Validates third-party hash + signature verification. |
+| 23 | `tests/test_crypto.py` | Validates all crypto primitives + STS handshake. |
+| 24 | `tests/test_encrypt.py` | Validates AES-256-GCM including AAD binding. |
+| 25 | `tests/test_protocol.py` | Validates message creation, validation, and serialization. |
+| 26 | `tests/test_transport.py` | Validates TCP send/receive over real sockets. |
+| 27 | `tests/test_vault.py` | Validates vault encryption, file/JSON storage, trust records. |
+| 28 | `tests/test_verification.py` | Validates third-party hash + signature verification. |
 
 ---
 
@@ -622,9 +635,9 @@ sequenceDiagram
     Net-->>AppB: Peer A found!
     AppB->>AppB: state.peers["A"] = PeerInfo(...)
 
-    Note over AppA,AppB: Phase 3: STS Handshake
+    Note over AppA,AppB: Phase 3: STS Handshake (via sessions.py)
     AppA->>Net: KEY_EXCHANGE_INIT (ephemeral_pub_A)
-    Net->>AppB: receive
+    Net->>AppB: receive → sessions.handle_handshake_init()
     AppB->>AppB: session.handle_init() → response
     AppB->>Net: KEY_EXCHANGE_RESPONSE (eph_B, ltk_B, sig_B)
     Net->>AppA: receive
@@ -632,7 +645,7 @@ sequenceDiagram
     AppA->>Net: KEY_EXCHANGE_CONFIRM (ltk_A, sig_A)
     Net->>AppB: receive
     AppB->>AppB: session.handle_confirm() verify sig_A, derive key
-    Note over AppA,AppB: Both have session_key ✓
+    Note over AppA,AppB: Both have session_key in sessions._session_keys ✓
 
     Note over AppA,AppB: Phase 5: File List Sharing
     UserA->>AppA: POST /api/add-shared-file (filename)
@@ -644,16 +657,19 @@ sequenceDiagram
     Net->>AppB: receive
     AppB->>AppB: manifests.store_manifest()
 
-    Note over AppA,AppB: Phase 6: Consent-Based Transfer
+    Note over AppA,AppB: Phase 6: Consent-Based Encrypted Transfer
     UserB->>AppB: POST /api/request-file (peer_id=A, filename)
     AppB->>Net: FILE_REQUEST (filename, hash)
     Net->>AppA: receive → consent.handle_file_request()
     AppA->>AppA: state.add_consent_request()
     UserA->>AppA: POST /api/consent/{id}/accept
     AppA->>AppA: consent.on_consent_approved()
-    AppA->>Net: FILE_SEND (filename, hash, data)
+    AppA->>AppA: sessions.initiate_handshake() if no session
+    AppA->>AppA: encrypt.encrypt_file_payload(session_key, data)
+    AppA->>Net: FILE_SEND (filename, hash, encrypted_data)
     Net->>AppB: receive → consent.handle_file_send()
-    AppB->>AppB: Verify hash ✓, save to received/
+    AppB->>AppB: encrypt.decrypt_file_payload(session_key, data)
+    AppB->>AppB: Verify hash of decrypted data ✓, save to received/
 
     Note over AppA,AppB: Phase 9: Verification
     UserB->>AppB: POST /api/verify-file

@@ -40,6 +40,7 @@ from app.core.consent import (
     handle_consent_response,
 )
 from app.core.revocation import handle_revoke_key
+from app.core.sessions import handle_handshake_init
 from app.core.protocol import MessageType
 
 # Set up logging
@@ -167,6 +168,7 @@ def _handle_incoming_message(msg: dict, sock, addr) -> None:
 
     # Route to the appropriate handler
     handlers = {
+        MessageType.KEY_EXCHANGE_INIT:   handle_handshake_init,
         MessageType.FILE_LIST_REQUEST:   handle_file_list_request,
         MessageType.FILE_LIST_RESPONSE:  handle_file_list_response,
         MessageType.FILE_REQUEST:        handle_file_request,

@@ -201,7 +201,13 @@ def handle_file_request(msg: dict, sock, addr) -> None:
 
 def handle_file_send(msg: dict, sock, addr) -> None:
     """
-    Handle an incoming FILE_SEND: receive and save the file.
+    Handle an incoming FILE_SEND: decrypt, verify, and save the file.
+
+    Steps:
+      1. Look up the session key for the sending peer
+      2. Decrypt the file data (AES-256-GCM with filename:hash as AAD)
+      3. Verify the SHA-256 hash of the decrypted data
+      4. Save to the received/ directory
     """
     payload = msg["payload"]
     peer_id = payload["peer_id"]
@@ -209,13 +215,38 @@ def handle_file_send(msg: dict, sock, addr) -> None:
     file_hash = payload.get("file_hash", "")
     data_b64 = payload.get("data", "")
 
-    # Decode the file data
+    # Decode the raw (encrypted) bytes
     try:
-        file_data = decode_bytes(data_b64) if isinstance(data_b64, str) else data_b64
+        encrypted_data = decode_bytes(data_b64) if isinstance(data_b64, str) else data_b64
     except Exception:
-        file_data = data_b64 if isinstance(data_b64, bytes) else b""
+        encrypted_data = data_b64 if isinstance(data_b64, bytes) else b""
 
-    # Verify the hash
+    # Decrypt using the session key
+    from app.core.sessions import get_session_key
+    from app.crypto.encrypt import decrypt_file_payload
+
+    session_key = get_session_key(peer_id)
+    if not session_key:
+        app_state.add_status(
+            f"Rejected '{filename}' from {peer_id}: no active session. "
+            f"Handshake required before file transfer.",
+            level="error"
+        )
+        return
+
+    try:
+        file_data = decrypt_file_payload(
+            session_key, encrypted_data, filename, file_hash
+        )
+    except Exception as e:
+        app_state.add_status(
+            f"Decryption FAILED for '{filename}' from {peer_id}: {e}. "
+            f"File may have been tampered with!",
+            level="error"
+        )
+        return
+
+    # Verify the hash of the decrypted plaintext
     actual_hash = sha256_hash(file_data)
     if file_hash and actual_hash != file_hash:
         app_state.add_status(
@@ -238,7 +269,7 @@ def handle_file_send(msg: dict, sock, addr) -> None:
 
     app_state.add_status(
         f"Received '{filename}' ({len(file_data)} bytes) from {peer_id}. "
-        f"Hash verified ✓. Saved to received/",
+        f"Decrypted ✓ Hash verified ✓. Saved to received/",
         level="success"
     )
 
@@ -320,18 +351,56 @@ def on_consent_approved(request_id: str) -> None:
 
 def _send_file_to_peer(peer_id: str, address: str, port: int,
                         filepath: str, filename: str, file_hash: str) -> None:
-    """Actually send a file to a peer over TCP."""
+    """
+    Encrypt and send a file to a peer over TCP.
+
+    Steps:
+      1. Ensure an STS session exists (handshake if needed)
+      2. Read the file data
+      3. Encrypt with AES-256-GCM using the session key
+      4. Send the encrypted blob via FILE_SEND
+    """
+    from app.core.sessions import get_session_key, initiate_handshake
+    from app.crypto.encrypt import encrypt_file_payload
+
     try:
+        # Step 1: Ensure we have a session key (PFS via ephemeral ECDH)
+        session_key = get_session_key(peer_id)
+        if not session_key:
+            app_state.add_status(
+                f"No active session with {peer_id}. Initiating handshake…",
+                level="info"
+            )
+            session_key = initiate_handshake(peer_id, address, port)
+            if not session_key:
+                app_state.add_status(
+                    f"Cannot send '{filename}': handshake with {peer_id} failed.",
+                    level="error"
+                )
+                return
+
+        # Step 2: Read file
         with open(filepath, "rb") as f:
             file_data = f.read()
 
-        msg = file_send(app_state.peer_id, filename, file_hash, data=file_data)
+        # Step 3: Encrypt (AES-256-GCM, AAD = "filename:hash")
+        encrypted_data = encrypt_file_payload(
+            session_key, file_data, filename, file_hash
+        )
+
+        # Step 4: Send the encrypted blob
+        msg = file_send(
+            app_state.peer_id, filename, file_hash, data=encrypted_data
+        )
         with socket.create_connection((address, port), timeout=30) as sock:
             send_message(sock, msg)
 
         app_state.add_status(
-            f"Sent '{filename}' ({len(file_data)} bytes) to {peer_id}",
+            f"Sent '{filename}' ({len(file_data)} bytes, encrypted) to {peer_id} ✓",
             level="success"
         )
     except Exception as e:
-        app_state.add_status(f"Failed to send '{filename}' to {peer_id}: {e}", level="error")
+        app_state.add_status(
+            f"Failed to send '{filename}' to {peer_id}: {e}",
+            level="error"
+        )

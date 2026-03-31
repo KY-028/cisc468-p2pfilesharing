@@ -104,6 +104,14 @@ def rotate_key() -> dict:
         level="success"
     )
 
+    # Invalidate all existing sessions (they were authenticated with the old key)
+    from app.core.sessions import clear_all_sessions
+    clear_all_sessions()
+    app_state.add_status(
+        "All active sessions cleared — new handshakes required.",
+        level="info"
+    )
+
     # Step 5: Notify all known peers
     for peer_id, peer in app_state.peers.items():
         try:
@@ -225,3 +233,7 @@ def handle_revoke_key(msg: dict, sock, addr) -> None:
             f"Failed to process new key from {peer_id}: {e}",
             level="error"
         )
+
+    # Invalidate the existing session with this peer
+    from app.core.sessions import remove_session
+    remove_session(peer_id)
