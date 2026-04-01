@@ -18,6 +18,7 @@ import os
 import sys
 import argparse
 import logging
+import socket
 from flask import Flask
 from app.ui.routes import ui_blueprint
 from app.core.state import app_state
@@ -109,11 +110,26 @@ def create_app(tcp_port: int = 9000) -> Flask:
 # Identity key initialization
 # ---------------------------------------------------------------------------
 
+def _get_local_ip() -> str:
+    """Get the local IP used for outbound network traffic."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
 def _init_identity(tcp_port: int) -> None:
     """Generate or load the RSA-2048 identity key pair."""
-    # Use a port-specific data directory so multiple local instances
-    # don't share the same identity key.
-    data_dir = os.path.join(os.path.dirname(__file__), "..", f"data_{tcp_port}")
+    # Use IP + port as the directory name so that different machines
+    # (same port) and different local instances (same IP, different port)
+    # each get a unique identity key.
+    local_ip = _get_local_ip()
+    ip_tag = local_ip.replace(".", "_")
+    data_dir = os.path.join(os.path.dirname(__file__), "..", f"data_{ip_tag}_{tcp_port}")
     key_file = os.path.join(data_dir, "identity_key.pem")
 
     os.makedirs(data_dir, exist_ok=True)

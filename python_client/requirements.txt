@@ -1,4 +1,4 @@
-# CISC 468 — Secure P2P File Sharing
+# CISC 468 - Secure P2P File Sharing
 # Core dependencies
 
 flask>=3.0              # Web framework for localhost UI

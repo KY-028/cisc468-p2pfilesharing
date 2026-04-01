@@ -33,10 +33,8 @@ from app.network.transport import send_message
 
 logger = logging.getLogger(__name__)
 
-# Path to identity key (same as main.py)
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
-KEY_FILE = os.path.join(DATA_DIR, "identity_key.pem")
-OLD_KEY_FILE = os.path.join(DATA_DIR, "identity_key.old.pem")
+# Key file path is resolved dynamically from app_state so it always
+# matches whichever data_{ip}_{port}/ directory _init_identity chose.
 
 
 def rotate_key() -> dict:
@@ -84,14 +82,18 @@ def rotate_key() -> dict:
     cross_signature = sign_data(old_private_key, new_pub_pem)
 
     # Step 3: Archive old key, save new key
-    os.makedirs(DATA_DIR, exist_ok=True)
-    if os.path.exists(KEY_FILE):
+    key_file = app_state.private_key_pem  # path set by _init_identity
+    data_dir = os.path.dirname(key_file)
+    old_key_file = os.path.join(data_dir, "identity_key.old.pem")
+    os.makedirs(data_dir, exist_ok=True)
+    if os.path.exists(key_file):
         # Keep one backup of the old key
-        if os.path.exists(OLD_KEY_FILE):
-            os.remove(OLD_KEY_FILE)
-        os.rename(KEY_FILE, OLD_KEY_FILE)
+        if os.path.exists(old_key_file):
+            os.remove(old_key_file)
+        os.rename(key_file, old_key_file)
 
-    save_private_key(new_private_key, KEY_FILE)
+    save_private_key(new_private_key, key_file)
+    app_state.private_key_pem = key_file  # path unchanged after rotation
 
     # Step 4: Update app_state
     app_state._private_key = new_private_key
