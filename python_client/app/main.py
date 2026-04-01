@@ -190,11 +190,33 @@ def _handle_incoming_message(msg: dict, sock, addr) -> None:
     Route an incoming message to the appropriate handler.
 
     This is the central message dispatcher. Each message type gets
-    routed to the right handler function.
+    routed to the right handler function. Operations that involve file
+    data or file listings require the peer to be verified (trusted).
     """
     msg_type = msg.get("type", "")
     peer_id = msg.get("payload", {}).get("peer_id", "unknown")
     logger.info(f"Received {msg_type} from {peer_id}")
+
+    # Messages that require the peer to be verified first
+    TRUST_REQUIRED = {
+        MessageType.FILE_LIST_REQUEST,
+        MessageType.FILE_LIST_RESPONSE,
+        MessageType.FILE_REQUEST,
+        MessageType.FILE_SEND,
+        MessageType.CONSENT_REQUEST,
+        MessageType.CONSENT_RESPONSE,
+    }
+
+    if msg_type in TRUST_REQUIRED:
+        peer = app_state.peers.get(peer_id)
+        if not peer or not peer.trusted:
+            logger.warning(f"Rejected {msg_type} from unverified peer {peer_id}")
+            app_state.add_status(
+                f"Blocked {msg_type} from unverified peer {peer_id}. "
+                f"Verify the peer first.",
+                level="warning"
+            )
+            return
 
     # Route to the appropriate handler
     handlers = {

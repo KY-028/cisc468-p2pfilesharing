@@ -137,6 +137,11 @@ def request_file():
         app_state.add_status("Peer ID and filename are required to request a file.", level="error")
         return jsonify({"ok": False, "error": "peer_id and filename required"}), 400
 
+    peer = app_state.peers.get(peer_id)
+    if peer and not peer.trusted:
+        app_state.add_status(f"Cannot request files from unverified peer {peer_id}. Verify first.", level="error")
+        return jsonify({"ok": False, "error": "Peer is not verified"}), 403
+
     record = request_file_from_peer(peer_id, filename)
     if record:
         return jsonify({"ok": True, "peer_id": peer_id, "filename": filename,
@@ -152,14 +157,20 @@ def request_file_list():
     peer_id = request.form.get("peer_id", "").strip()
     if not peer_id:
         return jsonify({"ok": False, "error": "peer_id required"}), 400
+
+    peer = app_state.peers.get(peer_id)
+    if peer and not peer.trusted:
+        app_state.add_status(f"Cannot fetch file list from unverified peer {peer_id}. Verify first.", level="error")
+        return jsonify({"ok": False, "error": "Peer is not verified"}), 403
+
     success = request_file_list_from_peer(peer_id)
     return jsonify({"ok": success})
 
 
 @ui_blueprint.route("/api/send-file", methods=["POST"])
 def send_file():
-    """Send a consent request to a peer, offering to send them a file."""
-    from app.core.consent import _send_file_to_peer
+    """Send a consent request to the receiving peer before sending a file."""
+    from app.core.consent import send_consent_offer
     peer_id = request.form.get("peer_id", "").strip()
     filename = request.form.get("filename", "").strip()
     logger.info(f"routes.send_file → user sending '{filename}' to {peer_id}")
@@ -173,14 +184,17 @@ def send_file():
         app_state.add_status(f"Unknown peer: {peer_id}", level="error")
         return jsonify({"ok": False, "error": "Unknown peer"}), 404
 
+    if not peer.trusted:
+        app_state.add_status(f"Cannot send files to unverified peer {peer_id}. Verify first.", level="error")
+        return jsonify({"ok": False, "error": "Peer is not verified"}), 403
+
     shared = get_file_by_name(filename)
     if not shared:
         app_state.add_status(f"File '{filename}' not in shared files.", level="error")
         return jsonify({"ok": False, "error": "File not shared"}), 404
 
-    # Send the file directly
-    _send_file_to_peer(peer_id, peer.address, peer.port,
-                        shared.filepath, shared.filename, shared.sha256_hash)
+    # Send a consent request to the receiver — file is only sent after they approve
+    send_consent_offer(peer_id, shared.filename, shared.sha256_hash)
     return jsonify({"ok": True, "peer_id": peer_id, "filename": filename})
 
 
@@ -194,8 +208,9 @@ def handle_consent(request_id: str, action: str):
     Accept or deny an incoming consent request.
     action must be 'accept' or 'deny'.
     If accepted and it was a file_request, triggers file send.
+    If accepted and it was a file_send (consent offer), sends approval back.
     """
-    from app.core.consent import on_consent_approved
+    from app.core.consent import on_consent_approved, on_consent_denied
     logger.info(f"routes.handle_consent → user {action}ing consent {request_id}")
     if action not in ("accept", "deny"):
         return jsonify({"ok": False, "error": "action must be 'accept' or 'deny'"}), 400
@@ -213,9 +228,21 @@ def handle_consent(request_id: str, action: str):
         level="success" if approved else "info"
     )
 
-    # If approved and it was a file request, send the file
+    # Store the resolved consent info so on_consent_approved can look it up
+    resolved = getattr(app_state, '_resolved_consents', {})
+    app_state._resolved_consents = resolved
+    resolved[request_id] = {
+        "peer_id": consent.peer_id,
+        "peer_name": consent.peer_name,
+        "action": consent.action,
+        "filename": consent.filename,
+        "file_hash": consent.file_hash,
+    }
+
     if approved:
         on_consent_approved(request_id)
+    else:
+        on_consent_denied(request_id)
 
     return jsonify({"ok": True, "action": action, "request_id": request_id})
 
@@ -361,6 +388,9 @@ def confirm_verify_route():
             f"✓ Peer {peer_id} is now VERIFIED. Both sides confirmed.",
             level="success"
         )
+        # Auto-fetch file list now that the peer is verified
+        from app.core.sessions import _auto_fetch_file_list
+        _auto_fetch_file_list(peer_id)
         return jsonify({"ok": True, "verified": True})
 
     app_state.add_status(

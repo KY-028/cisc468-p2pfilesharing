@@ -73,11 +73,15 @@ def _update_peer_key(peer_id: str, sts: STSSession) -> None:
 
 
 def _auto_fetch_file_list(peer_id: str) -> None:
-    """Fetch the peer's file list immediately after handshake so we cache it."""
+    """Fetch the peer's file list after handshake, but only if they are verified."""
     import threading
 
     def _fetch():
         try:
+            peer = app_state.peers.get(peer_id)
+            if not peer or not peer.trusted:
+                logger.info(f"Skipping auto-fetch for {peer_id}: not yet verified")
+                return
             from app.core.consent import request_file_list_from_peer
             request_file_list_from_peer(peer_id)
             logger.info(f"Auto-fetched file list from {peer_id}")
@@ -286,6 +290,7 @@ def handle_verify_confirm(msg: dict, sock, addr) -> None:
             level="success"
         )
         logger.info(f"Mutual verification complete for {peer_id}")
+        _auto_fetch_file_list(peer_id)
     else:
         app_state.add_status(
             f"Peer {peer_id} confirmed verification. Waiting for you to confirm…",
