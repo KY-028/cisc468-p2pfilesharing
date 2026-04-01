@@ -155,7 +155,7 @@ class TestSerialization:
         assert isinstance(parsed["payload"]["ephemeral_public_key"], str)
 
         restored = deserialize(json_str)
-        assert restored["payload"]["ephemeral_public_key"] == encode_bytes(raw_key)
+        assert restored["payload"]["ephemeral_public_key"] == raw_key
 
     def test_round_trip_file_list(self):
         files = [

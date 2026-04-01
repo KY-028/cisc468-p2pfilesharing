@@ -61,6 +61,7 @@ def request_file_from_peer(peer_id: str, filename: str, file_hash: str = "") -> 
     Returns:
         The TransferRecord, or None if the peer isn't known.
     """
+    logger.info(f"consent.request_file_from_peer → requesting '{filename}' from {peer_id}")
     peer = app_state.peers.get(peer_id)
     if not peer:
         app_state.add_status(f"Unknown peer: {peer_id}", level="error")
@@ -101,6 +102,7 @@ def request_file_list_from_peer(peer_id: str) -> bool:
     Returns:
         True if the request was sent successfully.
     """
+    logger.info(f"consent.request_file_list_from_peer → querying {peer_id}")
     peer = app_state.peers.get(peer_id)
     if not peer:
         app_state.add_status(f"Unknown peer: {peer_id}", level="error")
@@ -110,6 +112,11 @@ def request_file_list_from_peer(peer_id: str) -> bool:
         msg = file_list_request(app_state.peer_id)
         with socket.create_connection((peer.address, peer.port), timeout=10) as sock:
             send_message(sock, msg)
+            from app.network.transport import receive_message
+            response = receive_message(sock)
+            if response:
+                from app.main import _handle_incoming_message
+                _handle_incoming_message(response, sock, (peer.address, peer.port))
         app_state.add_status(f"Requested file list from {peer_id}", level="info")
         return True
     except Exception as e:
@@ -126,6 +133,7 @@ def handle_file_list_request(msg: dict, sock, addr) -> None:
     Handle an incoming FILE_LIST_REQUEST: respond with our file list.
     """
     peer_id = msg["payload"]["peer_id"]
+    logger.info(f"consent.handle_file_list_request ← from {peer_id}, sending our file list")
     files = get_file_list_for_network()
     response = file_list_response(app_state.peer_id, files)
     try:
@@ -141,6 +149,7 @@ def handle_file_list_response(msg: dict, sock, addr) -> None:
     """
     peer_id = msg["payload"]["peer_id"]
     files = msg["payload"].get("files", [])
+    logger.info(f"consent.handle_file_list_response ← from {peer_id}, got {len(files)} files")
     store_manifest(peer_id, files)
     app_state.add_status(f"Received file list from {peer_id}: {len(files)} files", level="success")
 
@@ -153,6 +162,7 @@ def handle_file_request(msg: dict, sock, addr) -> None:
     peer_id = payload["peer_id"]
     filename = payload["filename"]
     file_hash = payload.get("file_hash", "")
+    logger.info(f"consent.handle_file_request ← {peer_id} wants '{filename}', creating consent prompt")
 
     # Check if we have the file
     shared = get_file_by_name(filename) or get_file_by_hash(file_hash)
@@ -213,13 +223,8 @@ def handle_file_send(msg: dict, sock, addr) -> None:
     peer_id = payload["peer_id"]
     filename = payload["filename"]
     file_hash = payload.get("file_hash", "")
-    data_b64 = payload.get("data", "")
-
-    # Decode the raw (encrypted) bytes
-    try:
-        encrypted_data = decode_bytes(data_b64) if isinstance(data_b64, str) else data_b64
-    except Exception:
-        encrypted_data = data_b64 if isinstance(data_b64, bytes) else b""
+    encrypted_data = payload.get("data", b"")
+    logger.info(f"consent.handle_file_send ← receiving '{filename}' from {peer_id}, decrypting…")
 
     # Decrypt using the session key
     from app.core.sessions import get_session_key
@@ -288,6 +293,7 @@ def handle_consent_request(msg: dict, sock, addr) -> None:
     peer_id = payload["peer_id"]
     filename = payload["filename"]
     action = payload["action"]
+    logger.info(f"consent.handle_consent_request ← {peer_id} wants to {action} '{filename}'")
 
     peer_name = peer_id
     peer_info = app_state.peers.get(peer_id)
@@ -314,6 +320,7 @@ def handle_consent_response(msg: dict, sock, addr) -> None:
     peer_id = payload["peer_id"]
     approved = payload["approved"]
     request_id = payload.get("request_id", "")
+    logger.info(f"consent.handle_consent_response ← {peer_id} {'approved' if approved else 'denied'} request")
 
     if approved:
         app_state.add_status(f"Peer {peer_id} approved the request", level="success")
@@ -334,6 +341,7 @@ def on_consent_approved(request_id: str) -> None:
     Called when the user approves a consent request.
     If it's a file_request, send the file to the peer.
     """
+    logger.info(f"consent.on_consent_approved → user approved request {request_id}")
     pending_sends = getattr(app_state, '_pending_sends', {})
     send_info = pending_sends.pop(request_id, None)
 
@@ -363,6 +371,7 @@ def _send_file_to_peer(peer_id: str, address: str, port: int,
     from app.core.sessions import get_session_key, initiate_handshake
     from app.crypto.encrypt import encrypt_file_payload
 
+    logger.info(f"consent._send_file_to_peer → sending '{filename}' to {peer_id} at {address}:{port}")
     try:
         # Step 1: Ensure we have a session key (PFS via ephemeral ECDH)
         session_key = get_session_key(peer_id)

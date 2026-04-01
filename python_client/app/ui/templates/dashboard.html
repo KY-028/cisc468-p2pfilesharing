@@ -2,128 +2,162 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="dashboard-grid">
+<div class="app-layout">
 
     <!-- ============================================================ -->
-    <!-- IDENTITY PANEL — Shows this peer's name and fingerprint       -->
+    <!-- LEFT SIDEBAR — Peer list with color-coded status              -->
     <!-- ============================================================ -->
-    <section class="card identity-card">
-        <h2 class="card-title">
-            <span class="card-icon">🪪</span> Identity
-        </h2>
-        <div class="card-body">
-            <div class="identity-row">
-                <span class="label">Peer ID</span>
-                <code id="identity-peer-id">{{ state.peer_id }}</code>
-            </div>
-            <div class="identity-row">
-                <span class="label">Fingerprint</span>
-                <code id="identity-fingerprint" class="fingerprint">
-                    {{ state.fingerprint or "(generating…)" }}
-                </code>
-            </div>
-            <div class="identity-row">
-                <span class="label">Status</span>
-                <span id="identity-status" class="badge badge-success">Online</span>
-            </div>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2 class="sidebar-title">Peers</h2>
+            <button class="btn btn-icon" id="btn-refresh-peers" title="Refresh peers">⟳</button>
         </div>
-    </section>
+        <div id="peer-list" class="peer-sidebar-list">
+            <p class="empty-state">Searching for peers…</p>
+        </div>
+    </aside>
 
     <!-- ============================================================ -->
-    <!-- PEER LIST PANEL — Discovered peers on the network             -->
+    <!-- MAIN CONTENT — Changes based on context                       -->
     <!-- ============================================================ -->
-    <section class="card peers-card">
-        <h2 class="card-title">
-            <span class="card-icon">👥</span> Peers
-            <button class="btn btn-sm btn-secondary" id="btn-refresh-peers"
-                    title="Refresh peer list">↻ Refresh</button>
-        </h2>
-        <div class="card-body">
-            <div id="peer-list" class="peer-list">
-                <!-- Populated by JS; placeholder shown if empty -->
-                <p class="empty-state">No peers discovered yet.</p>
+    <div class="main-panel">
+
+        <!-- Default view: my files + status -->
+        <div id="view-home" class="view active">
+            <!-- Identity Card -->
+            <section class="card">
+                <div class="card-header">
+                    <h2><span class="icon">👤</span> My Identity</h2>
+                </div>
+                <div class="card-body">
+                    <div class="info-row">
+                        <span class="info-label">Peer ID</span>
+                        <code id="identity-peer-id" class="info-value mono">{{ state.peer_id }}</code>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Fingerprint</span>
+                        <code id="identity-fingerprint" class="info-value mono small">{{ state.fingerprint or "(generating…)" }}</code>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Status</span>
+                        <span class="status-badge online">Online</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- My Shared Files -->
+            <section class="card">
+                <div class="card-header">
+                    <h2><span class="icon">📁</span> My Shared Files</h2>
+                    <button class="btn btn-small btn-secondary" id="btn-scan-files">Scan Folder</button>
+                </div>
+                <div class="card-body">
+                    <div id="file-list" class="item-list">
+                        <p class="empty-state">No files shared yet. Place files in the <code>shared/</code> folder.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Consent Requests -->
+            <section class="card" id="consent-section">
+                <div class="card-header">
+                    <h2><span class="icon">🔔</span> Incoming Requests</h2>
+                </div>
+                <div class="card-body">
+                    <div id="consent-list" class="item-list">
+                        <p class="empty-state">No pending requests.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Status Log -->
+            <section class="card">
+                <div class="card-header">
+                    <h2><span class="icon">📋</span> Activity Log</h2>
+                </div>
+                <div class="card-body">
+                    <div id="status-log" class="status-log">
+                        <p class="empty-state">No activity yet.</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Peer detail view: shown when a peer is selected -->
+        <div id="view-peer" class="view">
+            <div class="view-header">
+                <button class="btn btn-back" id="btn-back-home">← Back</button>
+                <h2 id="peer-detail-name" class="view-title">Peer Details</h2>
+                <span id="peer-detail-badge" class="status-badge"></span>
             </div>
+
+            <!-- Peer Info -->
+            <section class="card">
+                <div class="card-header">
+                    <h2><span class="icon">ℹ️</span> Peer Info</h2>
+                </div>
+                <div class="card-body">
+                    <div class="info-row">
+                        <span class="info-label">Peer ID</span>
+                        <code id="peer-detail-id" class="info-value mono"></code>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Address</span>
+                        <code id="peer-detail-address" class="info-value mono"></code>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Fingerprint</span>
+                        <code id="peer-detail-fingerprint" class="info-value mono small"></code>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Verified</span>
+                        <span id="peer-detail-trusted"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Actions -->
+            <section class="card">
+                <div class="card-header">
+                    <h2><span class="icon">⚡</span> Actions</h2>
+                </div>
+                <div class="card-body">
+                    <div class="action-buttons">
+                        <button class="btn btn-primary action-btn" id="btn-verify-peer">
+                            🔐 Verify Peer (Handshake)
+                        </button>
+                        <button class="btn btn-secondary action-btn" id="btn-fetch-files">
+                            📄 Fetch Their File List
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Peer's Files (fetched from manifests) -->
+            <section class="card">
+                <div class="card-header">
+                    <h2><span class="icon">📁</span> Their Files</h2>
+                </div>
+                <div class="card-body">
+                    <div id="peer-file-list" class="item-list">
+                        <p class="empty-state">Click "Fetch Their File List" to see available files.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Send a file to this peer -->
+            <section class="card">
+                <div class="card-header">
+                    <h2><span class="icon">📤</span> Send File to Peer</h2>
+                </div>
+                <div class="card-body">
+                    <div id="send-file-list" class="item-list">
+                        <p class="empty-state">No shared files to send. Add files to your shared/ folder first.</p>
+                    </div>
+                </div>
+            </section>
         </div>
-    </section>
-
-    <!-- ============================================================ -->
-    <!-- SHARED FILES PANEL — Files this peer is sharing               -->
-    <!-- ============================================================ -->
-    <section class="card files-card">
-        <h2 class="card-title">
-            <span class="card-icon">📁</span> Shared Files
-        </h2>
-        <div class="card-body">
-            <!-- Add file form -->
-            <form id="add-file-form" class="inline-form">
-                <input type="text" name="filename" placeholder="filename.txt"
-                       class="input" id="add-file-input" required>
-                <button type="submit" class="btn btn-primary">+ Add</button>
-            </form>
-
-            <div id="file-list" class="file-list">
-                <!-- Populated by JS -->
-                <p class="empty-state">No files shared yet.</p>
-            </div>
-        </div>
-    </section>
-
-    <!-- ============================================================ -->
-    <!-- REQUEST / SEND PANEL — Actions to request or push files       -->
-    <!-- ============================================================ -->
-    <section class="card actions-card">
-        <h2 class="card-title">
-            <span class="card-icon">📤</span> Request / Send
-        </h2>
-        <div class="card-body">
-            <!-- Request a file from a peer -->
-            <form id="request-file-form" class="action-form">
-                <h3>Request File</h3>
-                <input type="text" name="peer_id" placeholder="Peer ID" class="input" required>
-                <input type="text" name="filename" placeholder="filename.txt" class="input" required>
-                <button type="submit" class="btn btn-primary">Request</button>
-            </form>
-
-            <hr class="divider">
-
-            <!-- Send (push) a file to a peer -->
-            <form id="send-file-form" class="action-form">
-                <h3>Send File</h3>
-                <input type="text" name="peer_id" placeholder="Peer ID" class="input" required>
-                <input type="text" name="filename" placeholder="filename.txt" class="input" required>
-                <button type="submit" class="btn btn-accent">Send</button>
-            </form>
-        </div>
-    </section>
-
-    <!-- ============================================================ -->
-    <!-- CONSENT PANEL — Incoming requests needing approval            -->
-    <!-- ============================================================ -->
-    <section class="card consent-card">
-        <h2 class="card-title">
-            <span class="card-icon">⚠️</span> Consent Requests
-        </h2>
-        <div class="card-body">
-            <div id="consent-list" class="consent-list">
-                <p class="empty-state">No pending consent requests.</p>
-            </div>
-        </div>
-    </section>
-
-    <!-- ============================================================ -->
-    <!-- STATUS LOG — Success/failure messages                         -->
-    <!-- ============================================================ -->
-    <section class="card status-card">
-        <h2 class="card-title">
-            <span class="card-icon">📋</span> Status Log
-        </h2>
-        <div class="card-body">
-            <div id="status-log" class="status-log">
-                <p class="empty-state">No messages yet.</p>
-            </div>
-        </div>
-    </section>
-
+    </div>
 </div>
 
 <!-- ================================================================ -->
@@ -141,6 +175,50 @@
         <div class="modal-actions">
             <button class="btn btn-primary" id="modal-accept">✓ Accept</button>
             <button class="btn btn-danger" id="modal-deny">✕ Deny</button>
+        </div>
+    </div>
+</div>
+
+<!-- ================================================================ -->
+<!-- VERIFICATION MODAL — Compare safety numbers with peer             -->
+<!-- ================================================================ -->
+<div id="verify-modal" class="modal hidden">
+    <div class="modal-backdrop" id="verify-modal-backdrop"></div>
+    <div class="modal-dialog verify-dialog">
+        <h2 class="modal-title">🔐 Verify Peer Identity</h2>
+        <p class="verify-instructions">
+            Compare this verification code with the code shown on
+            <strong id="verify-peer-name"></strong>'s screen.
+            If both codes match, the connection is secure.
+        </p>
+
+        <div class="verify-code-box">
+            <div class="verify-code" id="verify-code-display"></div>
+        </div>
+
+        <div class="verify-fingerprints">
+            <div class="verify-fp-row">
+                <span class="verify-fp-label">Your fingerprint</span>
+                <code class="verify-fp-value" id="verify-my-fp"></code>
+            </div>
+            <div class="verify-fp-row">
+                <span class="verify-fp-label">Their fingerprint</span>
+                <code class="verify-fp-value" id="verify-their-fp"></code>
+            </div>
+        </div>
+
+        <p class="verify-warning">
+            ⚠️ If the codes don't match, someone may be intercepting
+            your connection (man-in-the-middle attack).
+        </p>
+
+        <div class="modal-actions">
+            <button class="btn btn-success" id="verify-confirm">
+                ✓ Codes Match — Verify
+            </button>
+            <button class="btn btn-danger" id="verify-reject">
+                ✕ Codes Don't Match
+            </button>
         </div>
     </div>
 </div>

@@ -80,7 +80,7 @@ def create_app(tcp_port: int = 9000) -> Flask:
         return {"state": app_state}
 
     # --- Initialize identity keys ---
-    _init_identity()
+    _init_identity(tcp_port)
 
     # --- Start TCP server ---
     tcp_server = _start_tcp_server(tcp_port)
@@ -96,6 +96,11 @@ def create_app(tcp_port: int = 9000) -> Flask:
     import atexit
     atexit.register(lambda: _shutdown(tcp_server, discovery))
 
+    # --- Auto-scan shared directory ---
+    count = scan_shared_directory()
+    if count > 0:
+        app_state.add_status(f"Auto-shared {count} file(s) from shared/ directory.", level="info")
+
     app_state.add_status("Application started.", level="success")
     return flask_app
 
@@ -104,26 +109,31 @@ def create_app(tcp_port: int = 9000) -> Flask:
 # Identity key initialization
 # ---------------------------------------------------------------------------
 
-def _init_identity() -> None:
+def _init_identity(tcp_port: int) -> None:
     """Generate or load the RSA-2048 identity key pair."""
-    os.makedirs(DATA_DIR, exist_ok=True)
+    # Use a port-specific data directory so multiple local instances
+    # don't share the same identity key.
+    data_dir = os.path.join(os.path.dirname(__file__), "..", f"data_{tcp_port}")
+    key_file = os.path.join(data_dir, "identity_key.pem")
 
-    if os.path.exists(KEY_FILE):
+    os.makedirs(data_dir, exist_ok=True)
+
+    if os.path.exists(key_file):
         # Load existing key
-        logger.info(f"Loading identity key from {KEY_FILE}")
-        private_key = load_private_key(KEY_FILE)
+        logger.info(f"Loading identity key from {key_file}")
+        private_key = load_private_key(key_file)
         public_key = private_key.public_key()
         app_state.add_status("Loaded existing identity key.", level="info")
     else:
         # Generate new key pair
         logger.info("Generating new RSA-2048 identity key pair...")
         private_key, public_key = generate_rsa_keypair()
-        save_private_key(private_key, KEY_FILE)
+        save_private_key(private_key, key_file)
         app_state.add_status("Generated new identity key pair.", level="success")
 
     # Store in app state
     app_state.public_key_pem = serialize_public_key(public_key).decode("utf-8")
-    app_state.private_key_pem = KEY_FILE  # Store path, not the key itself
+    app_state.private_key_pem = key_file  # Store path, not the key itself
     app_state.fingerprint = get_fingerprint(public_key)
     # Keep a reference to the key objects for crypto operations
     app_state._private_key = private_key

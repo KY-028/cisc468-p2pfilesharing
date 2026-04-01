@@ -15,20 +15,15 @@
             <span class="navbar-title">P2P Secure File Sharing</span>
         </div>
         <div class="navbar-peer-id">
-            <span class="label">Peer ID:</span>
+            <span class="label">My Peer ID:</span>
             <code class="peer-id-value">{{ state.peer_id }}</code>
         </div>
     </header>
 
-    <!-- Main content area -->
+    <!-- Main content area (full height, no footer) -->
     <main class="main-content">
         {% block content %}{% endblock %}
     </main>
-
-    <!-- Footer -->
-    <footer class="footer">
-        <span>CISC 468 — Secure P2P File Sharing</span>
-    </footer>
 
     <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

@@ -221,7 +221,9 @@ def deserialize(json_str: str) -> dict:
     if not isinstance(msg, dict):
         raise ProtocolError("Message must be a JSON object")
 
-    return validate_message(msg)
+    validated_msg = validate_message(msg)
+    validated_msg["payload"] = _decode_binary_fields(validated_msg["payload"])
+    return validated_msg
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +233,8 @@ def deserialize(json_str: str) -> dict:
 # Fields that should be treated as base64-encoded binary data
 BINARY_FIELD_NAMES = {"public_key", "signature", "data", "nonce",
                       "ciphertext", "hmac", "new_public_key",
-                      "ephemeral_public_key", "long_term_public_key"}
+                      "ephemeral_public_key", "long_term_public_key",
+                      "cross_signature"}
 
 
 def _encode_binary_fields(payload: dict) -> dict:
@@ -239,7 +242,7 @@ def _encode_binary_fields(payload: dict) -> dict:
     Recursively encode bytes values to base64 strings in a payload dict.
     Returns a new dict (does not mutate the input).
     """
-    result = {}
+    result: dict[str, Any] = {}
     for key, value in payload.items():
         if isinstance(value, bytes):
             result[key] = base64.b64encode(value).decode("ascii")
@@ -250,6 +253,27 @@ def _encode_binary_fields(payload: dict) -> dict:
                 _encode_binary_fields(item) if isinstance(item, dict) else item
                 for item in value
             ]
+        else:
+            result[key] = value
+    return result
+
+
+def _decode_binary_fields(payload: dict) -> dict:
+    """
+    Recursively decode base64 strings back to bytes for known binary fields.
+    Returns a new dict (does not mutate the input).
+    """
+    result: dict[str, Any] = {}
+    for key, value in payload.items():
+        if isinstance(value, dict):
+            result[key] = _decode_binary_fields(value)
+        elif isinstance(value, list):
+            result[key] = [
+                _decode_binary_fields(item) if isinstance(item, dict) else item
+                for item in value
+            ]
+        elif key in BINARY_FIELD_NAMES and isinstance(value, str):
+            result[key] = decode_bytes(value)
         else:
             result[key] = value
     return result

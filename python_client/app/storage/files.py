@@ -44,6 +44,7 @@ def add_file(filepath: str) -> Optional[SharedFile]:
         The SharedFile record, or None if the file doesn't exist.
     """
     filepath = os.path.abspath(filepath)
+    logger.info(f"files.add_file → adding '{os.path.basename(filepath)}' to shared list")
     if not os.path.isfile(filepath):
         logger.error(f"File not found: {filepath}")
         return None
@@ -90,6 +91,7 @@ def remove_file(filename: str) -> bool:
         True if the file was found and removed, False otherwise.
     """
     before = len(app_state.shared_files)
+    logger.info(f"files.remove_file → removing '{filename}' from shared list")
     app_state.shared_files = [
         f for f in app_state.shared_files if f.filename != filename
     ]
@@ -109,6 +111,8 @@ def scan_shared_directory() -> int:
     shared_dir = get_shared_dir()
     added = 0
     for entry in os.listdir(shared_dir):
+        if entry.startswith('.'):
+            continue  # Skip hidden files like .DS_Store
         filepath = os.path.join(shared_dir, entry)
         if os.path.isfile(filepath):
             result = add_file(filepath)

@@ -55,6 +55,7 @@ def store_manifest(peer_id: str, file_list: list[dict]) -> PeerManifest:
     Returns:
         The stored PeerManifest.
     """
+    logger.info(f"manifests.store_manifest → storing {len(file_list)} files from {peer_id}")
     entries = []
     for f in file_list:
         entries.append(ManifestEntry(
@@ -93,6 +94,7 @@ def verify_file_hash(data: bytes, expected_hash: str) -> bool:
         True if the hash matches.
     """
     actual = sha256_hash(data)
+    logger.info(f"manifests.verify_file_hash → expected={expected_hash[:12]}…, actual={actual[:12]}…")
     matches = actual == expected_hash
     if not matches:
         logger.warning(f"Hash mismatch: expected {expected_hash[:12]}, got {actual[:12]}")
@@ -117,6 +119,7 @@ def verify_file_signature(data_hash: str, signature_b64: str,
         True if the signature is valid.
     """
     try:
+        logger.info(f"manifests.verify_file_signature → verifying owner sig for hash={data_hash[:12]}…")
         public_key = deserialize_public_key(owner_public_key_pem)
         signature_bytes = base64.b64decode(signature_b64)
         hash_bytes = data_hash.encode("utf-8")

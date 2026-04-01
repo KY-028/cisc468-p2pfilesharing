@@ -55,7 +55,7 @@ def deserialize_public_key(pem_bytes: bytes):
     Deserialize PEM-encoded bytes into an RSA public key object.
 
     Args:
-        pem_bytes: PEM-encoded public key (bytes or str).
+        pem_bytes: PEM-encoded public key.
 
     Returns:
         An RSAPublicKey object.
@@ -63,8 +63,6 @@ def deserialize_public_key(pem_bytes: bytes):
     Raises:
         ValueError: If the PEM data is invalid.
     """
-    if isinstance(pem_bytes, str):
-        pem_bytes = pem_bytes.encode("utf-8")
     return serialization.load_pem_public_key(pem_bytes)
 
 

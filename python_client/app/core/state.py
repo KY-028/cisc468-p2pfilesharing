@@ -24,6 +24,7 @@ class PeerInfo:
     public_key_pem: Optional[str] = None   # PEM-encoded RSA public key (set after key exchange)
     fingerprint: Optional[str] = None      # SHA-256 fingerprint of the public key
     trusted: bool = False           # True if user has verified the fingerprint
+    online: bool = True             # True if the peer is currently reachable
     last_seen: float = 0.0         # Timestamp of last contact
 
 
@@ -108,6 +109,9 @@ class AppState:
         # --- Status log ---
         # Recent status/error messages for the UI.
         self.status_log: list[StatusMessage] = []
+
+        # List of peers awaiting manual verification code confirmation
+        self.pending_verifications: list[dict] = []
 
     def add_status(self, message: str, level: str = "info") -> None:
         """Add a status message to the log."""

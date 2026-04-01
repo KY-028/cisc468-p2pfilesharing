@@ -20,6 +20,9 @@ from app.storage.files import (
 )
 from app.storage.manifests import get_manifest, get_all_manifests
 
+import logging
+logger = logging.getLogger(__name__)
+
 # All UI routes are grouped under this blueprint.
 ui_blueprint = Blueprint("ui", __name__)
 
@@ -69,6 +72,7 @@ def add_shared_file():
     Accepts either a filename (must exist in shared/ dir) or scans the dir.
     """
     filename = request.form.get("filename", "").strip()
+    logger.info(f"routes.add_shared_file → user adding '{filename}'")
     if not filename:
         app_state.add_status("No filename provided.", level="error")
         return jsonify({"ok": False, "error": "filename is required"}), 400
@@ -127,6 +131,7 @@ def request_file():
     from app.core.consent import request_file_from_peer
     peer_id = request.form.get("peer_id", "").strip()
     filename = request.form.get("filename", "").strip()
+    logger.info(f"routes.request_file → user requesting '{filename}' from {peer_id}")
 
     if not peer_id or not filename:
         app_state.add_status("Peer ID and filename are required to request a file.", level="error")
@@ -157,6 +162,7 @@ def send_file():
     from app.core.consent import _send_file_to_peer
     peer_id = request.form.get("peer_id", "").strip()
     filename = request.form.get("filename", "").strip()
+    logger.info(f"routes.send_file → user sending '{filename}' to {peer_id}")
 
     if not peer_id or not filename:
         app_state.add_status("Peer ID and filename are required to send a file.", level="error")
@@ -190,6 +196,7 @@ def handle_consent(request_id: str, action: str):
     If accepted and it was a file_request, triggers file send.
     """
     from app.core.consent import on_consent_approved
+    logger.info(f"routes.handle_consent → user {action}ing consent {request_id}")
     if action not in ("accept", "deny"):
         return jsonify({"ok": False, "error": "action must be 'accept' or 'deny'"}), 400
 
@@ -216,19 +223,20 @@ def handle_consent(request_id: str, action: str):
 
 
 # ---------------------------------------------------------------------------
-# Key Rotation (Phase 10)
+# Key Rotation
 # ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/rotate-key", methods=["POST"])
 def rotate_key_route():
     """Rotate the identity key and notify all known peers."""
     from app.core.revocation import rotate_key
+    logger.info("routes.rotate_key_route → user triggered key rotation")
     result = rotate_key()
     return jsonify({"ok": True, **result})
 
 
 # ---------------------------------------------------------------------------
-# File Verification (Phase 9)
+# File Verification
 # ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/verify-file", methods=["POST"])
@@ -237,6 +245,7 @@ def verify_file_route():
     from app.core.verification import verify_manifest_entry
     peer_id = request.form.get("peer_id", "").strip()
     filename = request.form.get("filename", "").strip()
+    logger.info(f"routes.verify_file_route → verifying '{filename}' from {peer_id}'s manifest")
 
     if not peer_id or not filename:
         return jsonify({"ok": False, "error": "peer_id and filename required"}), 400
@@ -246,6 +255,117 @@ def verify_file_route():
         return jsonify({"ok": False, "error": "File not found in peer's manifest"}), 404
 
     return jsonify({"ok": True, **result})
+
+
+@ui_blueprint.route("/api/verify-peer", methods=["POST"])
+def verify_peer_route():
+    """
+    Step 1 of peer verification: perform STS handshake and return a
+    verification code.  The user must compare this code with the peer
+    out-of-band (in person, phone, etc.) and then confirm.
+    """
+    from app.core.sessions import initiate_handshake, get_session_key
+    import hashlib
+
+    peer_id = request.form.get("peer_id", "").strip()
+    if not peer_id:
+        return jsonify({"ok": False, "error": "peer_id required"}), 400
+
+    peer = app_state.peers.get(peer_id)
+    if not peer:
+        return jsonify({"ok": False, "error": "Unknown peer"}), 404
+
+    if not peer.online:
+        return jsonify({"ok": False, "error": "Peer is offline"}), 400
+
+    if peer.trusted:
+        return jsonify({"ok": True, "already_verified": True,
+                        "message": "Peer is already verified."})
+
+    # Ensure we have a session (handshake) so we have the peer's public key
+    session_key = get_session_key(peer_id)
+    if not session_key:
+        session_key = initiate_handshake(peer_id, peer.address, peer.port)
+        if not session_key:
+            return jsonify({"ok": False, "error": "Handshake failed. Could not reach peer."}), 500
+
+    # Generate the verification code from both fingerprints.
+    # Both peers derive the SAME code because we sort the fingerprints
+    # before hashing — order doesn't matter.
+    my_fp = app_state.fingerprint or ""
+    their_fp = peer.fingerprint or ""
+    if not their_fp or their_fp == "unknown":
+        return jsonify({"ok": False, "error": "Peer fingerprint not available. Handshake may have failed."}), 500
+
+    combined = "\n".join(sorted([my_fp, their_fp]))
+    code_hash = hashlib.sha256(combined.encode()).hexdigest()
+    # Format as 6 groups of 5 digits (30 digits total) for easy reading
+    code_int = int(code_hash[:24], 16)  # Use first 24 hex chars = 96 bits
+    code_digits = str(code_int).zfill(30)[:30]
+    verification_code = " ".join(
+        code_digits[i:i+5] for i in range(0, 30, 5)
+    )
+
+    app_state.add_status(
+        f"Verification code generated for {peer_id}. "
+        f"Compare this code with the peer to confirm their identity.",
+        level="warning"
+    )
+
+    return jsonify({
+        "ok": True,
+        "verification_code": verification_code,
+        "my_fingerprint": my_fp,
+        "their_fingerprint": their_fp,
+        "peer_id": peer_id,
+    })
+
+
+@ui_blueprint.route("/api/confirm-verify", methods=["POST"])
+def confirm_verify_route():
+    """Step 2: User confirmed the verification code matches. Mark peer as trusted."""
+    peer_id = request.form.get("peer_id", "").strip()
+    if not peer_id:
+        return jsonify({"ok": False, "error": "peer_id required"}), 400
+
+    peer = app_state.peers.get(peer_id)
+    if not peer:
+        return jsonify({"ok": False, "error": "Unknown peer"}), 404
+
+    peer.trusted = True
+    app_state.pending_verifications = [pv for pv in app_state.pending_verifications if pv["peer_id"] != peer_id]
+    
+    app_state.add_status(
+        f"✓ Peer {peer_id} is now VERIFIED. Identity confirmed.",
+        level="success"
+    )
+    return jsonify({"ok": True, "verified": True})
+
+
+@ui_blueprint.route("/api/reject-verify", methods=["POST"])
+def reject_verify_route():
+    """User rejected the verification — codes didn't match. Possible MITM."""
+    from app.core.sessions import remove_session
+    peer_id = request.form.get("peer_id", "").strip()
+    if not peer_id:
+        return jsonify({"ok": False, "error": "peer_id required"}), 400
+
+    peer = app_state.peers.get(peer_id)
+    if peer:
+        peer.trusted = False
+
+    app_state.pending_verifications = [pv for pv in app_state.pending_verifications if pv["peer_id"] != peer_id]
+
+    # Destroy the session — it may be compromised
+    remove_session(peer_id)
+
+    app_state.add_status(
+        f"⚠ Verification REJECTED for {peer_id}. "
+        f"Codes did not match — possible man-in-the-middle attack! "
+        f"Session destroyed.",
+        level="error"
+    )
+    return jsonify({"ok": True, "rejected": True})
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +388,7 @@ def get_status():
                 "address": p.address,
                 "port": p.port,
                 "trusted": p.trusted,
+                "online": p.online,
                 "fingerprint": p.fingerprint or "unknown",
                 "last_seen": p.last_seen,
             }
@@ -325,4 +446,5 @@ def get_status():
             }
             for s in reversed(app_state.status_log)
         ],
+        "pending_verifications": app_state.pending_verifications,
     })

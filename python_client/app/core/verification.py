@@ -62,6 +62,7 @@ def verify_received_file(file_data: bytes, expected_hash: str,
         "actual_hash": "",
         "errors": [],
     }
+    logger.info(f"verification.verify_received_file → checking hash + owner sig for {owner_id}'s file (hash={expected_hash[:12]}…)")
 
     # Step 1: Verify hash
     actual_hash = sha256_hash(file_data)
@@ -113,6 +114,7 @@ def verify_manifest_entry(peer_id: str, filename: str) -> Optional[dict]:
     Returns:
         Verification result dict, or None if the file isn't found.
     """
+    logger.info(f"verification.verify_manifest_entry → verifying '{filename}' in {peer_id}'s manifest")
     manifest = get_manifest(peer_id)
     if not manifest:
         return None

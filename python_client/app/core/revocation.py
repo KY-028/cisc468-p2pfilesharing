@@ -65,6 +65,7 @@ def rotate_key() -> dict:
         "peers_notified": 0,
         "errors": [],
     }
+    logger.info(f"revocation.rotate_key → generating new RSA-2048 key, old fp={app_state.fingerprint[:16]}…")
 
     # Get the old private key for cross-signing
     old_private_key = getattr(app_state, '_private_key', None)
@@ -133,13 +134,14 @@ def rotate_key() -> dict:
 def _notify_peer_of_revocation(peer, new_pub_pem: bytes,
                                  cross_signature: bytes) -> None:
     """Send a REVOKE_KEY message to a single peer."""
+    logger.info(f"revocation._notify_peer → sending REVOKE_KEY to {peer.peer_id} at {peer.address}:{peer.port}")
     msg = revoke_key(
         peer_id=app_state.peer_id,
         new_public_key=new_pub_pem,
         reason="key_rotation"
     )
-    # Add the cross-signature to the payload so the peer can verify
-    msg["payload"]["cross_signature"] = base64.b64encode(cross_signature).decode("ascii")
+    # The protocol layer automatically encodes bytes fields
+    msg["payload"]["cross_signature"] = cross_signature
     msg["payload"]["old_fingerprint"] = getattr(app_state, '_old_fingerprint',
                                                  app_state.fingerprint)
 
@@ -161,8 +163,9 @@ def handle_revoke_key(msg: dict, sock, addr) -> None:
     """
     payload = msg["payload"]
     peer_id = payload["peer_id"]
-    new_pub_pem_b64 = payload.get("new_public_key", "")
-    cross_sig_b64 = payload.get("cross_signature", "")
+    logger.info(f"revocation.handle_revoke_key ← key revocation from {peer_id}, verifying cross-signature")
+    new_pub_pem = payload.get("new_public_key", b"")
+    cross_sig = payload.get("cross_signature", b"")
 
     peer = app_state.peers.get(peer_id)
     if not peer:
@@ -172,21 +175,11 @@ def handle_revoke_key(msg: dict, sock, addr) -> None:
         )
         return
 
-    # Decode the new public key
-    try:
-        if isinstance(new_pub_pem_b64, str) and not new_pub_pem_b64.startswith("-----"):
-            new_pub_pem = base64.b64decode(new_pub_pem_b64)
-        else:
-            new_pub_pem = new_pub_pem_b64.encode("utf-8") if isinstance(new_pub_pem_b64, str) else new_pub_pem_b64
-    except Exception:
-        new_pub_pem = new_pub_pem_b64.encode("utf-8") if isinstance(new_pub_pem_b64, str) else new_pub_pem_b64
-
     # Verify cross-signature if we have the old key
-    if peer.public_key_pem and cross_sig_b64:
+    if peer.public_key_pem and cross_sig:
         try:
             from app.crypto.keys import deserialize_public_key
             old_pub_key = deserialize_public_key(peer.public_key_pem)
-            cross_sig = base64.b64decode(cross_sig_b64)
             valid = verify_signature(old_pub_key, new_pub_pem, cross_sig)
 
             if not valid:
@@ -219,7 +212,7 @@ def handle_revoke_key(msg: dict, sock, addr) -> None:
     try:
         new_pub_key = deser_pub(new_pub_pem)
         new_fingerprint = get_fingerprint(new_pub_key)
-        peer.public_key_pem = new_pub_pem.decode("utf-8") if isinstance(new_pub_pem, bytes) else new_pub_pem
+        peer.public_key_pem = new_pub_pem.decode("utf-8")
         peer.fingerprint = new_fingerprint
         peer.trusted = False  # Must re-verify!
 

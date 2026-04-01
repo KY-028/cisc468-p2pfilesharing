@@ -124,11 +124,21 @@ class PeerDiscovery:
                 return
             address = addresses[0]  # Use the first address
 
+            # Preserve trusted status if peer was previously known
+            existing = app_state.peers.get(peer_id)
+            trusted = existing.trusted if existing else False
+            fingerprint = existing.fingerprint if existing else None
+            public_key_pem = existing.public_key_pem if existing else None
+
             peer = PeerInfo(
                 peer_id=peer_id,
                 display_name=peer_id,
                 address=address,
                 port=info.port,
+                trusted=trusted,
+                online=True,
+                fingerprint=fingerprint,
+                public_key_pem=public_key_pem,
                 last_seen=time.time(),
             )
             app_state.peers[peer_id] = peer
@@ -139,12 +149,12 @@ class PeerDiscovery:
             logger.info(f"mDNS: Discovered {peer_id} at {address}:{info.port}")
 
         elif state_change == ServiceStateChange.Removed:
-            # Peer disappeared
+            # Peer disappeared — mark offline instead of removing
             peer_id = self._extract_peer_id_from_name(name)
             if peer_id and peer_id in app_state.peers:
-                del app_state.peers[peer_id]
-                app_state.add_status(f"Peer left: {peer_id}", level="warning")
-                logger.info(f"mDNS: Peer removed: {peer_id}")
+                app_state.peers[peer_id].online = False
+                app_state.add_status(f"Peer went offline: {peer_id}", level="warning")
+                logger.info(f"mDNS: Peer offline: {peer_id}")
 
     def _extract_peer_id(self, info: ServiceInfo) -> str:
         """Extract the peer_id from service properties or name."""

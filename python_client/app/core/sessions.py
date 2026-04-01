@@ -41,29 +41,27 @@ _session_keys: dict[str, bytes] = {}
 
 def get_session_key(peer_id: str) -> Optional[bytes]:
     """Get the session key for a peer, if an active session exists."""
-    return _session_keys.get(peer_id)
+    key = _session_keys.get(peer_id)
+    logger.info(f"sessions.get_session_key → peer={peer_id}, found={'yes' if key else 'no'}")
+    return key
 
 
 def store_session_key(peer_id: str, key: bytes) -> None:
     """Store a session key for a peer."""
+    logger.info(f"sessions.store_session_key → cached key for {peer_id}")
     _session_keys[peer_id] = key
 
 
 def remove_session(peer_id: str) -> None:
     """Remove a session (e.g., on peer disconnect or key rotation)."""
+    logger.info(f"sessions.remove_session → clearing session for {peer_id}")
     _session_keys.pop(peer_id, None)
 
 
 def clear_all_sessions() -> None:
     """Remove all sessions (e.g., after local key rotation)."""
+    logger.info(f"sessions.clear_all_sessions → clearing {len(_session_keys)} active sessions")
     _session_keys.clear()
-
-
-def _decode_field(value) -> bytes:
-    """Decode a base64-encoded field if it's a string, pass through if bytes."""
-    if isinstance(value, str):
-        return decode_bytes(value)
-    return value
 
 
 def _update_peer_key(peer_id: str, sts: STSSession) -> None:
@@ -90,6 +88,7 @@ def initiate_handshake(peer_id: str, address: str, port: int) -> Optional[bytes]
     On success, stores the session key and returns it.
     On failure, logs an error and returns None.
     """
+    logger.info(f"sessions.initiate_handshake → starting 3-msg STS with {peer_id} at {address}:{port}")
     sts = STSSession(app_state._private_key, app_state._public_key)
 
     try:
@@ -113,9 +112,9 @@ def initiate_handshake(peer_id: str, address: str, port: int) -> Optional[bytes]
 
             resp = response_msg["payload"]
             confirm_payload = sts.handle_response({
-                "ephemeral_public_key": _decode_field(resp["ephemeral_public_key"]),
-                "long_term_public_key": _decode_field(resp["long_term_public_key"]),
-                "signature":           _decode_field(resp["signature"]),
+                "ephemeral_public_key": resp["ephemeral_public_key"],
+                "long_term_public_key": resp["long_term_public_key"],
+                "signature":           resp["signature"],
             })
 
             # Step 3: Send our long-term key + signature
@@ -168,11 +167,12 @@ def handle_handshake_init(msg: dict, sock, addr) -> None:
     """
     payload = msg["payload"]
     peer_id = payload["peer_id"]
+    logger.info(f"sessions.handle_handshake_init ← responding to STS from {peer_id}")
     sts = STSSession(app_state._private_key, app_state._public_key)
 
     try:
         # Step 1: Process the INIT, create our RESPONSE
-        eph_bytes = _decode_field(payload["ephemeral_public_key"])
+        eph_bytes = payload["ephemeral_public_key"]
         resp_payload = sts.handle_init({"ephemeral_public_key": eph_bytes})
 
         resp_msg = key_exchange_response(
@@ -194,17 +194,37 @@ def handle_handshake_init(msg: dict, sock, addr) -> None:
 
         conf = confirm_msg["payload"]
         sts.handle_confirm({
-            "long_term_public_key": _decode_field(conf["long_term_public_key"]),
-            "signature":           _decode_field(conf["signature"]),
+            "long_term_public_key": conf["long_term_public_key"],
+            "signature":           conf["signature"],
         })
 
         # Handshake complete — store results
         store_session_key(peer_id, sts.session_key)
         _update_peer_key(peer_id, sts)
 
+        peer = app_state.peers.get(peer_id)
+        if peer and not peer.trusted:
+            import hashlib
+            my_fp = app_state.fingerprint or ""
+            their_fp = peer.fingerprint or ""
+            if my_fp and their_fp and their_fp != "unknown":
+                combined = "\n".join(sorted([my_fp, their_fp]))
+                code_hash = hashlib.sha256(combined.encode()).hexdigest()
+                code_int = int(code_hash[:24], 16)
+                code_digits = str(code_int).zfill(30)[:30]
+                verification_code = " ".join(code_digits[i:i+5] for i in range(0, 30, 5))
+                
+                app_state.pending_verifications.append({
+                    "peer_id": peer_id,
+                    "peer_name": peer.display_name,
+                    "code": verification_code,
+                    "my_fingerprint": my_fp,
+                    "their_fingerprint": their_fp,
+                })
+
         app_state.add_status(
             f"Session established with {peer_id} (responder). "
-            f"Encrypted channel ready ✓",
+            f"Please verify their identity code.",
             level="success"
         )
         logger.info(f"STS handshake completed with {peer_id} (responder)")

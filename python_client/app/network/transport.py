@@ -53,6 +53,7 @@ def send_message(sock: socket.socket, msg: dict) -> None:
     """
     json_str = serialize(msg)
     payload = json_str.encode("utf-8")
+    logger.info(f"transport.send_message → type={msg.get('type', '?')}, {len(payload)} bytes")
     header = struct.pack(HEADER_FORMAT, len(payload))
     sock.sendall(header + payload)
 
