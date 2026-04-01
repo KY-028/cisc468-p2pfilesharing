@@ -157,7 +157,24 @@ def get_file_list_for_network() -> list[dict]:
 
 
 def find_received_file_by_hash(file_hash: str) -> Optional[SharedFile]:
-    """Search the received/ directory for a file matching the given hash."""
+    """Search the vault and received/ directory for a file matching the hash."""
+    # Check the vault manifest first (encrypted files)
+    from app.storage.vault import vault_lookup_by_hash, get_vault_dir
+    match = vault_lookup_by_hash(file_hash)
+    if match:
+        vault_path = os.path.join(
+            get_vault_dir(), f"{match['filename']}.vault"
+        )
+        return SharedFile(
+            filename=match["filename"],
+            filepath=vault_path,
+            size=match["size"],
+            sha256_hash=match["sha256_hash"],
+            owner_id=match.get("owner_id", app_state.peer_id),
+            signature=None,
+        )
+
+    # Fall back to plaintext received/ directory
     received_dir = os.path.join(os.path.dirname(__file__), "..", "..", "received")
     received_dir = os.path.abspath(received_dir)
     if not os.path.isdir(received_dir):

@@ -119,6 +119,9 @@ class AppState:
         self.verify_confirmed_by_me: set[str] = set()    # peer_ids we locally confirmed
         self.verify_confirmed_by_peer: set[str] = set()  # peer_ids that sent us VERIFY_CONFIRM
 
+        # Vault — True once the user has entered the correct password
+        self.vault_unlocked: bool = False
+
         # Directory for persisting trust records (set by init_trust_storage)
         self._trust_file: Optional[str] = None
 

@@ -1,16 +1,28 @@
 """
 vault.py — Encrypted local storage vault.
 
-Protects sensitive data at rest using AES-256-GCM with a key derived
-from a user-supplied password via PBKDF2-HMAC-SHA256 (600,000 iterations).
+Protects sensitive data at rest using AES-256-GCM with a 256-bit key
+derived from a user-supplied password via PBKDF2-HMAC-SHA256
+(600,000 iterations).
 
-The vault stores:
-  - Received files (encrypted)
-  - Peer trust records (which fingerprints are trusted)
-  - Any other sensitive local data
+Architecture
+------------
+On first launch the user creates a vault password.  A random 16-byte
+salt is generated and saved to ``vault_config.json``.  The password is
+**never** saved to disk — only the salt is persisted.
 
-Vault file format:
-  [16 bytes: salt][12 bytes: nonce][N bytes: ciphertext + 16 bytes tag]
+On every subsequent launch the user supplies the password, the saved
+salt is read, and PBKDF2 derives a 32-byte AES key.  That key is held
+**only in RAM** for the duration of the session.
+
+Each file stored in the vault is encrypted with its own random 96-bit
+nonce (IV).  The on-disk format of every vault file is::
+
+    [12-byte nonce][ciphertext + 16-byte GCM authentication tag]
+
+The vault also maintains a plaintext ``vault_manifest.json`` that maps
+stored filenames to their original SHA-256 hashes, sizes, and owner IDs
+so that other peers can look up files by hash without needing the key.
 
 Reading order: Read encrypt.py and kdf.py first, then this file.
 """
@@ -19,16 +31,24 @@ import os
 import json
 import logging
 from typing import Optional, Any
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from app.crypto.kdf import pbkdf2_derive_key, generate_salt
-from app.crypto.encrypt import encrypt, decrypt, NONCE_SIZE
 
 logger = logging.getLogger(__name__)
 
 # Default vault directory
 VAULT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "vault")
 
-# Salt size for PBKDF2
-SALT_SIZE = 16
+# Sizes (bytes)
+SALT_SIZE = 16       # PBKDF2 salt
+NONCE_SIZE = 12      # 96-bit GCM nonce
+TAG_SIZE = 16        # 128-bit GCM authentication tag
+
+# ---------------------------------------------------------------------------
+# In-memory vault key — derived from password + saved salt at startup.
+# Cleared on shutdown.  Never written to disk.
+# ---------------------------------------------------------------------------
+_vault_key: Optional[bytes] = None
 
 
 def get_vault_dir() -> str:
@@ -38,111 +58,231 @@ def get_vault_dir() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Low-level vault encryption/decryption
+# Vault initialization & key management
+# ---------------------------------------------------------------------------
+
+def is_vault_initialized() -> bool:
+    """Return True if a vault password has been set up previously."""
+    config_path = os.path.join(get_vault_dir(), "vault_config.json")
+    return os.path.isfile(config_path)
+
+
+def initialize_vault(password: str) -> bytes:
+    """
+    First-time vault setup.
+
+    1. Generate a cryptographically random 16-byte salt.
+    2. Save *only* the salt to ``vault_config.json``.
+    3. Derive a 32-byte AES key via PBKDF2-HMAC-SHA256 (600 000 iters).
+    4. Hold the derived key in RAM (``_vault_key``).
+
+    Args:
+        password: The user's chosen vault password.
+
+    Returns:
+        The derived 32-byte AES key.
+    """
+    salt = generate_salt(SALT_SIZE)
+    config_path = os.path.join(get_vault_dir(), "vault_config.json")
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump({"salt": salt.hex()}, f)
+    key = pbkdf2_derive_key(password, salt)
+    set_vault_key(key)
+    logger.info("Vault initialized (salt saved, key derived and held in RAM).")
+    return key
+
+
+def unlock_vault(password: str) -> bytes:
+    """
+    Unlock the vault on subsequent launches.
+
+    Reads the saved salt from ``vault_config.json``, derives the AES key,
+    and stores it in RAM.
+
+    Args:
+        password: The user's vault password.
+
+    Returns:
+        The derived 32-byte AES key.
+
+    Raises:
+        FileNotFoundError: If ``vault_config.json`` does not exist.
+    """
+    config_path = os.path.join(get_vault_dir(), "vault_config.json")
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError("Vault not initialized — no vault_config.json")
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    salt = bytes.fromhex(config["salt"])
+    key = pbkdf2_derive_key(password, salt)
+    set_vault_key(key)
+    logger.info("Vault unlocked (key derived from password + stored salt).")
+    return key
+
+
+def set_vault_key(key: bytes) -> None:
+    """Store the derived AES key in process memory for the session."""
+    global _vault_key
+    _vault_key = key
+
+
+def get_vault_key() -> Optional[bytes]:
+    """Return the current in-memory vault key, or None if locked."""
+    return _vault_key
+
+
+def lock_vault() -> None:
+    """Clear the vault key from memory (e.g. on shutdown)."""
+    global _vault_key
+    _vault_key = None
+
+
+def _require_key(key: Optional[bytes] = None) -> bytes:
+    """Return *key* if provided, else the module-level vault key, else raise."""
+    k = key or _vault_key
+    if k is None:
+        raise RuntimeError("Vault is locked. Unlock with your password first.")
+    return k
+
+
+# ---------------------------------------------------------------------------
+# Low-level encryption helpers
+# ---------------------------------------------------------------------------
+
+def vault_encrypt_data(key: bytes, plaintext: bytes) -> bytes:
+    """
+    Encrypt *plaintext* with AES-256-GCM.
+
+    A brand-new random 96-bit nonce is generated for every call.
+
+    Returns:
+        ``nonce (12 B) || ciphertext || tag (16 B)``
+    """
+    nonce = os.urandom(NONCE_SIZE)
+    aesgcm = AESGCM(key)
+    ct_and_tag = aesgcm.encrypt(nonce, plaintext, None)
+    return nonce + ct_and_tag
+
+
+def vault_decrypt_data(key: bytes, blob: bytes) -> bytes:
+    """
+    Decrypt a blob produced by :func:`vault_encrypt_data`.
+
+    Raises:
+        ValueError: If the blob is too short.
+        cryptography.exceptions.InvalidTag: If the key is wrong or data
+            was tampered with.
+    """
+    if len(blob) < NONCE_SIZE + TAG_SIZE:
+        raise ValueError("Vault blob too short")
+    nonce = blob[:NONCE_SIZE]
+    ct_and_tag = blob[NONCE_SIZE:]
+    aesgcm = AESGCM(key)
+    return aesgcm.decrypt(nonce, ct_and_tag, None)
+
+
+# ---------------------------------------------------------------------------
+# Password-based encrypt / decrypt  (self-contained blobs, used by tests)
 # ---------------------------------------------------------------------------
 
 def vault_encrypt(password: str, plaintext: bytes) -> bytes:
     """
-    Encrypt data for vault storage.
+    Encrypt with a per-blob salt so the blob is fully self-contained.
 
-    Derives a 32-byte key from the password using PBKDF2, then
-    encrypts with AES-256-GCM.
+    Blob format: ``salt (16 B) || nonce (12 B) || ciphertext || tag (16 B)``
 
-    Args:
-        password: The user's vault password.
-        plaintext: Data to encrypt.
-
-    Returns:
-        Vault blob: [16-byte salt][encrypted data (nonce + ciphertext + tag)]
+    This is useful for one-off encryption where you don't want to
+    manage a separate config file (e.g. unit tests).
     """
     salt = generate_salt(SALT_SIZE)
     key = pbkdf2_derive_key(password, salt)
-    ciphertext = encrypt(key, plaintext)
-    # Prepend salt so we can re-derive the key for decryption
-    return salt + ciphertext
+    nonce = os.urandom(NONCE_SIZE)
+    aesgcm = AESGCM(key)
+    ct_and_tag = aesgcm.encrypt(nonce, plaintext, None)
+    return salt + nonce + ct_and_tag
 
 
 def vault_decrypt(password: str, vault_blob: bytes) -> bytes:
     """
-    Decrypt vault-encrypted data.
-
-    Args:
-        password: The user's vault password.
-        vault_blob: Output from vault_encrypt().
-
-    Returns:
-        The decrypted plaintext.
+    Decrypt a blob produced by :func:`vault_encrypt`.
 
     Raises:
         ValueError: If the blob is too short.
-        InvalidTag: If the password is wrong or data is tampered.
+        cryptography.exceptions.InvalidTag: On wrong password or tampering.
     """
-    if len(vault_blob) < SALT_SIZE + NONCE_SIZE + 16:
+    if len(vault_blob) < SALT_SIZE + NONCE_SIZE + TAG_SIZE:
         raise ValueError("Vault blob too short")
-
     salt = vault_blob[:SALT_SIZE]
-    ciphertext = vault_blob[SALT_SIZE:]
+    rest = vault_blob[SALT_SIZE:]
     key = pbkdf2_derive_key(password, salt)
-    return decrypt(key, ciphertext)
+    nonce = rest[:NONCE_SIZE]
+    ct_and_tag = rest[NONCE_SIZE:]
+    aesgcm = AESGCM(key)
+    return aesgcm.decrypt(nonce, ct_and_tag, None)
 
 
 # ---------------------------------------------------------------------------
-# File-level vault operations
+# File-level vault operations  (use in-memory key by default)
 # ---------------------------------------------------------------------------
 
-def vault_store_file(password: str, filename: str, data: bytes) -> str:
+def vault_store_file(filename: str, data: bytes,
+                     key: Optional[bytes] = None) -> str:
     """
     Encrypt and store a file in the vault.
 
+    Each file gets a fresh random nonce.  The on-disk blob is::
+
+        nonce (12 B) || ciphertext || tag (16 B)
+
     Args:
-        password: Vault password.
-        filename: Name to store the file under.
-        data: Raw file bytes.
+        filename: Logical name to store the file under.
+        data: Raw plaintext bytes.
+        key: AES key to use.  Falls back to the in-memory vault key.
 
     Returns:
-        The full path to the stored vault file.
+        The full path to the stored ``.vault`` file.
     """
+    k = _require_key(key)
     vault_dir = get_vault_dir()
-    vault_blob = vault_encrypt(password, data)
-    # Use .vault extension to distinguish from plaintext
+    blob = vault_encrypt_data(k, data)
     vault_path = os.path.join(vault_dir, f"{filename}.vault")
-
     with open(vault_path, "wb") as f:
-        f.write(vault_blob)
-
-    logger.info(f"Vault: stored '{filename}' ({len(data)} bytes → {len(vault_blob)} encrypted)")
+        f.write(blob)
+    logger.info(
+        f"Vault: stored '{filename}' "
+        f"({len(data)} bytes → {len(blob)} encrypted)"
+    )
     return vault_path
 
 
-def vault_retrieve_file(password: str, filename: str) -> Optional[bytes]:
+def vault_retrieve_file(filename: str,
+                        key: Optional[bytes] = None) -> Optional[bytes]:
     """
     Decrypt and retrieve a file from the vault.
 
     Args:
-        password: Vault password.
-        filename: Name of the stored file.
+        filename: Logical name of the stored file.
+        key: AES key to use.  Falls back to the in-memory vault key.
 
     Returns:
-        The decrypted file bytes, or None if not found.
+        Decrypted plaintext bytes, or ``None`` if the file does not exist.
 
     Raises:
-        InvalidTag: If the password is wrong.
+        cryptography.exceptions.InvalidTag: On wrong key / tampering.
     """
+    k = _require_key(key)
     vault_dir = get_vault_dir()
     vault_path = os.path.join(vault_dir, f"{filename}.vault")
-
     if not os.path.isfile(vault_path):
         logger.warning(f"Vault: file '{filename}' not found")
         return None
-
     with open(vault_path, "rb") as f:
-        vault_blob = f.read()
-
-    return vault_decrypt(password, vault_blob)
+        blob = f.read()
+    return vault_decrypt_data(k, blob)
 
 
 def vault_list_files() -> list[str]:
-    """List all files stored in the vault."""
+    """List all files stored in the vault (by logical name, no extension)."""
     vault_dir = get_vault_dir()
     if not os.path.isdir(vault_dir):
         return []
@@ -154,56 +294,33 @@ def vault_list_files() -> list[str]:
 
 
 def vault_delete_file(filename: str) -> bool:
-    """
-    Delete a file from the vault.
-
-    Args:
-        filename: Name of the file to delete.
-
-    Returns:
-        True if the file was found and deleted.
-    """
+    """Delete a file from the vault.  Returns True if it existed."""
     vault_dir = get_vault_dir()
     vault_path = os.path.join(vault_dir, f"{filename}.vault")
     if os.path.isfile(vault_path):
         os.remove(vault_path)
         logger.info(f"Vault: deleted '{filename}'")
+        # Also remove from the received-files manifest
+        _remove_from_manifest(filename)
         return True
     return False
 
 
 # ---------------------------------------------------------------------------
-# JSON data vault (for structured data like trust records)
+# JSON data vault (structured data encrypted at rest)
 # ---------------------------------------------------------------------------
 
-def vault_store_json(password: str, name: str, data: Any) -> str:
-    """
-    Encrypt and store a JSON-serializable object in the vault.
-
-    Args:
-        password: Vault password.
-        name: Name for this data (e.g., "trust_records").
-        data: Any JSON-serializable Python object.
-
-    Returns:
-        Path to the stored vault file.
-    """
+def vault_store_json(name: str, data: Any,
+                     key: Optional[bytes] = None) -> str:
+    """Encrypt and store a JSON-serializable object in the vault."""
     json_bytes = json.dumps(data, indent=2).encode("utf-8")
-    return vault_store_file(password, f"{name}.json", json_bytes)
+    return vault_store_file(f"{name}.json", json_bytes, key=key)
 
 
-def vault_retrieve_json(password: str, name: str) -> Optional[Any]:
-    """
-    Decrypt and retrieve a JSON object from the vault.
-
-    Args:
-        password: Vault password.
-        name: Name of the stored data.
-
-    Returns:
-        The deserialized Python object, or None if not found.
-    """
-    raw = vault_retrieve_file(password, f"{name}.json")
+def vault_retrieve_json(name: str,
+                        key: Optional[bytes] = None) -> Optional[Any]:
+    """Decrypt and retrieve a JSON object from the vault."""
+    raw = vault_retrieve_file(f"{name}.json", key=key)
     if raw is None:
         return None
     return json.loads(raw.decode("utf-8"))
@@ -213,24 +330,71 @@ def vault_retrieve_json(password: str, name: str) -> Optional[Any]:
 # Trust store (peer fingerprint trust records)
 # ---------------------------------------------------------------------------
 
-def save_trust_records(password: str, trust_records: dict) -> None:
-    """
-    Save peer trust records to the vault.
-
-    Args:
-        password: Vault password.
-        trust_records: Dict mapping peer_id -> {fingerprint, trusted, last_verified}
-    """
-    vault_store_json(password, "trust_records", trust_records)
+def save_trust_records(trust_records: dict,
+                       key: Optional[bytes] = None) -> None:
+    """Save peer trust records to the vault (encrypted)."""
+    vault_store_json("trust_records", trust_records, key=key)
     logger.info(f"Vault: saved {len(trust_records)} trust records")
 
 
-def load_trust_records(password: str) -> dict:
+def load_trust_records(key: Optional[bytes] = None) -> dict:
+    """Load peer trust records from the vault.  Returns ``{}`` if none."""
+    records = vault_retrieve_json("trust_records", key=key)
+    return records if records else {}
+
+
+# ---------------------------------------------------------------------------
+# Received-files manifest (plaintext metadata so peers can look up by hash)
+# ---------------------------------------------------------------------------
+
+def _get_manifest_path() -> str:
+    return os.path.join(get_vault_dir(), "vault_manifest.json")
+
+
+def _load_manifest() -> dict:
+    path = _get_manifest_path()
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_manifest(manifest: dict) -> None:
+    path = _get_manifest_path()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+
+
+def vault_record_received_file(filename: str, sha256_hash: str,
+                                size: int, owner_id: str) -> None:
+    """Record metadata about a received file stored in the vault."""
+    manifest = _load_manifest()
+    manifest[filename] = {
+        "sha256_hash": sha256_hash,
+        "size": size,
+        "owner_id": owner_id,
+    }
+    _save_manifest(manifest)
+
+
+def vault_lookup_by_hash(file_hash: str) -> Optional[dict]:
     """
-    Load peer trust records from the vault.
+    Look up a vault file by its original SHA-256 hash.
 
     Returns:
-        Dict of trust records, or empty dict if none stored.
+        ``{"filename": ..., "sha256_hash": ..., "size": ..., "owner_id": ...}``
+        or ``None``.
     """
-    records = vault_retrieve_json(password, "trust_records")
-    return records if records else {}
+    manifest = _load_manifest()
+    for filename, meta in manifest.items():
+        if meta.get("sha256_hash") == file_hash:
+            return {"filename": filename, **meta}
+    return None
+
+
+def _remove_from_manifest(filename: str) -> None:
+    """Remove an entry from the received-files manifest."""
+    manifest = _load_manifest()
+    if filename in manifest:
+        del manifest[filename]
+        _save_manifest(manifest)

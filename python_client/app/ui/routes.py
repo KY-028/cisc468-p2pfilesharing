@@ -12,19 +12,153 @@ Reading order: Read this THIRD (after state.py → main.py) to see all endpoints
 import time
 import uuid
 import os
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for
+import io
+from flask import (
+    Blueprint, render_template, request, jsonify,
+    redirect, url_for, send_file,
+)
 from app.core.state import app_state
 from app.storage.files import (
     add_file, remove_file, scan_shared_directory, get_shared_dir,
     get_file_list_for_network, get_file_by_hash, get_file_by_name,
 )
 from app.storage.manifests import get_manifest, get_all_manifests
+from app.storage.vault import (
+    is_vault_initialized, initialize_vault, unlock_vault,
+    get_vault_key, vault_list_files, vault_retrieve_file,
+)
 
 import logging
 logger = logging.getLogger(__name__)
 
 # All UI routes are grouped under this blueprint.
 ui_blueprint = Blueprint("ui", __name__)
+
+
+# ---------------------------------------------------------------------------
+# Before-request guard: redirect to vault setup/unlock if key not loaded
+# ---------------------------------------------------------------------------
+
+_VAULT_EXEMPT_ENDPOINTS = frozenset({
+    "ui.setup_page", "ui.unlock_page",
+    "ui.vault_setup", "ui.vault_unlock",
+    "static",
+})
+
+
+@ui_blueprint.before_request
+def require_vault_unlocked():
+    """Ensure the vault is unlocked before accessing any protected page."""
+    if request.endpoint in _VAULT_EXEMPT_ENDPOINTS:
+        return  # allow through
+    if get_vault_key() is not None:
+        return  # vault already unlocked
+    if is_vault_initialized():
+        return redirect(url_for("ui.unlock_page"))
+    return redirect(url_for("ui.setup_page"))
+
+
+# ---------------------------------------------------------------------------
+# Vault setup / unlock pages
+# ---------------------------------------------------------------------------
+
+@ui_blueprint.route("/setup")
+def setup_page():
+    """First-launch: create a vault password."""
+    if get_vault_key() is not None:
+        return redirect(url_for("ui.dashboard"))
+    if is_vault_initialized():
+        return redirect(url_for("ui.unlock_page"))
+    return render_template("vault_setup.html", is_unlock=False, error=None)
+
+
+@ui_blueprint.route("/unlock")
+def unlock_page():
+    """Subsequent launches: unlock with existing password."""
+    if get_vault_key() is not None:
+        return redirect(url_for("ui.dashboard"))
+    if not is_vault_initialized():
+        return redirect(url_for("ui.setup_page"))
+    return render_template("vault_setup.html", is_unlock=True, error=None)
+
+
+@ui_blueprint.route("/api/vault/setup", methods=["POST"])
+def vault_setup():
+    """Handle first-time vault password creation."""
+    password = request.form.get("password", "")
+    confirm = request.form.get("confirm_password", "")
+
+    if len(password) < 8:
+        return render_template(
+            "vault_setup.html", is_unlock=False,
+            error="Password must be at least 8 characters.",
+        )
+    if password != confirm:
+        return render_template(
+            "vault_setup.html", is_unlock=False,
+            error="Passwords do not match.",
+        )
+
+    initialize_vault(password)
+    app_state.vault_unlocked = True
+    app_state.add_status("Vault created and unlocked.", level="success")
+    return redirect(url_for("ui.dashboard"))
+
+
+@ui_blueprint.route("/api/vault/unlock", methods=["POST"])
+def vault_unlock():
+    """Handle vault unlock on subsequent launches."""
+    from cryptography.exceptions import InvalidTag
+    password = request.form.get("password", "")
+    if not password:
+        return render_template(
+            "vault_setup.html", is_unlock=True,
+            error="Please enter your vault password.",
+        )
+    try:
+        unlock_vault(password)
+    except (InvalidTag, Exception) as exc:
+        logger.warning(f"Vault unlock failed: {exc}")
+        return render_template(
+            "vault_setup.html", is_unlock=True,
+            error="Incorrect password or corrupted vault config.",
+        )
+    app_state.vault_unlocked = True
+    app_state.add_status("Vault unlocked.", level="success")
+    return redirect(url_for("ui.dashboard"))
+
+
+# ---------------------------------------------------------------------------
+# Vault file management API
+# ---------------------------------------------------------------------------
+
+@ui_blueprint.route("/api/vault/files")
+def vault_files_api():
+    """Return the list of files stored in the vault."""
+    files = vault_list_files()
+    return jsonify({"ok": True, "files": files})
+
+
+@ui_blueprint.route("/api/vault/download/<path:filename>")
+def vault_download(filename):
+    """Decrypt a vault file and serve it as a download."""
+    from cryptography.exceptions import InvalidTag
+    try:
+        data = vault_retrieve_file(filename)
+    except RuntimeError:
+        return jsonify({"ok": False, "error": "Vault is locked"}), 403
+    except InvalidTag:
+        return jsonify({
+            "ok": False,
+            "error": "Decryption failed — file may be corrupted or tampered with",
+        }), 400
+    if data is None:
+        return jsonify({"ok": False, "error": "File not found in vault"}), 404
+    return send_file(
+        io.BytesIO(data),
+        download_name=filename,
+        as_attachment=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -522,4 +656,6 @@ def get_status():
             for s in reversed(app_state.status_log)
         ],
         "pending_verifications": app_state.pending_verifications,
+        "vault_unlocked": app_state.vault_unlocked,
+        "vault_files": vault_list_files() if app_state.vault_unlocked else [],
     })

@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Vault Setup{% endblock %}
+
+{% block content %}
+<div class="vault-auth-page">
+    <div class="vault-auth-card">
+        <div class="vault-icon">🔐</div>
+        <h1 class="vault-title">{{ "Unlock Vault" if is_unlock else "Create Vault Password" }}</h1>
+        <p class="vault-subtitle">
+            {% if is_unlock %}
+                Enter your vault password to decrypt your stored files.
+            {% else %}
+                Choose a strong password to protect your files at rest.
+                This password will <strong>never</strong> be saved to disk.
+            {% endif %}
+        </p>
+
+        {% if error %}
+        <div class="vault-error">
+            <span class="vault-error-icon">⚠</span> {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('ui.vault_setup') if not is_unlock else url_for('ui.vault_unlock') }}" class="vault-form">
+            <div class="vault-field">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password"
+                       placeholder="Enter vault password" required autofocus
+                       minlength="8" autocomplete="{{ 'current-password' if is_unlock else 'new-password' }}">
+            </div>
+
+            {% if not is_unlock %}
+            <div class="vault-field">
+                <label for="confirm_password">Confirm Password</label>
+                <input type="password" id="confirm_password" name="confirm_password"
+                       placeholder="Confirm vault password" required
+                       minlength="8" autocomplete="new-password">
+            </div>
+            {% endif %}
+
+            <button type="submit" class="btn btn-primary vault-submit">
+                {{ "Unlock" if is_unlock else "Create Vault" }}
+            </button>
+        </form>
+
+        <div class="vault-info">
+            <p>
+                {% if is_unlock %}
+                    Your files are encrypted with AES-256-GCM. The key is
+                    derived from your password using PBKDF2-HMAC-SHA256
+                    (600,000 iterations) and held only in memory.
+                {% else %}
+                    A random salt will be generated and saved locally.
+                    Your password and derived key are <strong>never</strong>
+                    written to disk — they exist only in RAM during the session.
+                {% endif %}
+            </p>
+        </div>
+    </div>
+</div>
+
+<style>
+.vault-auth-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 52px);
+    padding: 24px;
+    background: var(--bg-body);
+}
+
+.vault-auth-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+    padding: 48px 40px;
+    max-width: 440px;
+    width: 100%;
+    text-align: center;
+}
+
+.vault-icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+}
+
+.vault-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.vault-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 28px;
+    line-height: 1.5;
+}
+
+.vault-error {
+    background: var(--error-bg);
+    color: var(--error);
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    font-size: 0.88rem;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+}
+
+.vault-error-icon {
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.vault-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    text-align: left;
+}
+
+.vault-field label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
+.vault-field input {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 0.95rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    font-family: var(--font-sans);
+    transition: border-color 0.15s;
+}
+
+.vault-field input:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(79, 125, 247, 0.12);
+}
+
+.vault-submit {
+    width: 100%;
+    padding: 14px;
+    font-size: 1rem;
+    font-weight: 600;
+    margin-top: 8px;
+    cursor: pointer;
+}
+
+.vault-info {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+
+.vault-info p {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+</style>
+{% endblock %}

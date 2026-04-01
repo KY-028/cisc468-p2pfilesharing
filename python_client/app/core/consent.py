@@ -481,23 +481,47 @@ def _check_prior_consent(peer_id: str, filename: str) -> bool:
 
 def _save_received_file(peer_id: str, filename: str, file_data: bytes,
                          actual_hash: str) -> None:
-    """Save a decrypted and verified file to the received/ directory."""
-    received_dir = get_received_dir()
-    save_path = os.path.join(received_dir, filename)
-
-    # Handle filename collision
-    if os.path.exists(save_path):
-        name, ext = os.path.splitext(filename)
-        save_path = os.path.join(received_dir, f"{name}_{uuid.uuid4().hex[:6]}{ext}")
-
-    with open(save_path, "wb") as f:
-        f.write(file_data)
-
-    app_state.add_status(
-        f"Received '{filename}' ({len(file_data)} bytes) from {peer_id}. "
-        f"Decrypted ✓ Hash verified ✓. Saved to received/",
-        level="success"
+    """Encrypt and store a received file in the vault (encrypted at rest)."""
+    from app.storage.vault import (
+        vault_store_file, vault_record_received_file, get_vault_key,
     )
+
+    vault_key = get_vault_key()
+    if vault_key is not None:
+        # --- Vault is unlocked: encrypt at rest ---
+        # Handle filename collision with existing vault files
+        store_name = filename
+        from app.storage.vault import vault_list_files
+        existing = vault_list_files()
+        if store_name in existing:
+            name, ext = os.path.splitext(filename)
+            store_name = f"{name}_{uuid.uuid4().hex[:6]}{ext}"
+
+        vault_store_file(store_name, file_data)
+        vault_record_received_file(
+            store_name, actual_hash, len(file_data), peer_id
+        )
+        app_state.add_status(
+            f"Received '{filename}' ({len(file_data)} bytes) from {peer_id}. "
+            f"Decrypted ✓ Hash verified ✓ Encrypted at rest ✓",
+            level="success"
+        )
+    else:
+        # Vault not unlocked — fall back to plaintext (received/ dir)
+        received_dir = get_received_dir()
+        save_path = os.path.join(received_dir, filename)
+        if os.path.exists(save_path):
+            name, ext = os.path.splitext(filename)
+            save_path = os.path.join(
+                received_dir, f"{name}_{uuid.uuid4().hex[:6]}{ext}"
+            )
+        with open(save_path, "wb") as f:
+            f.write(file_data)
+        app_state.add_status(
+            f"Received '{filename}' ({len(file_data)} bytes) from {peer_id}. "
+            f"Decrypted ✓ Hash verified ✓ (vault locked — saved unencrypted)",
+            level="warning"
+        )
 
     # Cross-peer verification: if the file was originally owned by someone
     # else, verify the owner's signature from the cached manifest.
@@ -739,9 +763,20 @@ def _send_file_to_peer(peer_id: str, address: str, port: int,
                 )
                 return
 
-        # Step 2: Read file
-        with open(filepath, "rb") as f:
-            file_data = f.read()
+        # Step 2: Read file (decrypt from vault if stored there)
+        if filepath.endswith(".vault"):
+            from app.storage.vault import vault_retrieve_file as _vault_get
+            vault_name = os.path.basename(filepath).replace(".vault", "")
+            file_data = _vault_get(vault_name)
+            if file_data is None:
+                app_state.add_status(
+                    f"Cannot send '{filename}': vault file not found.",
+                    level="error"
+                )
+                return
+        else:
+            with open(filepath, "rb") as f:
+                file_data = f.read()
 
         # Step 3: Encrypt (AES-256-GCM, AAD = "filename:hash")
         encrypted_data = encrypt_file_payload(

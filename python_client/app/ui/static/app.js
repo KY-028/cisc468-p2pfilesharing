@@ -188,6 +188,33 @@ function renderStatusLog(logs) {
 
 
 // ============================================================
+// Render: Vault files (encrypted at rest)
+// ============================================================
+function renderVaultFiles(vaultFiles) {
+    const container = document.getElementById("vault-file-list");
+    if (!container) return;
+    if (!vaultFiles || vaultFiles.length === 0) {
+        container.innerHTML = '<p class="empty-state">No files stored in the vault yet. Received files are encrypted here automatically.</p>';
+        return;
+    }
+    container.innerHTML = vaultFiles.map(f => `
+        <div class="list-item">
+            <div class="list-item-info">
+                <span class="list-item-name">🔒 ${escapeHtml(f)}</span>
+                <span class="list-item-detail">Encrypted at rest (AES-256-GCM)</span>
+            </div>
+            <button class="btn btn-small btn-primary"
+                    onclick="downloadVaultFile('${escapeHtml(f)}')">↓ Download</button>
+        </div>
+    `).join("");
+}
+
+async function downloadVaultFile(filename) {
+    window.location.href = `/api/vault/download/${encodeURIComponent(filename)}`;
+}
+
+
+// ============================================================
 // Peer Selection — show peer detail view
 // ============================================================
 function selectPeer(peerId) {
@@ -527,6 +554,7 @@ async function pollStatus() {
         renderMyFiles(data.shared_files);
         renderConsents(data.pending_consents);
         renderStatusLog(data.status_log);
+        renderVaultFiles(data.vault_files);
 
         // Update peer detail view if a peer is selected
         if (selectedPeerId) {
