@@ -154,3 +154,26 @@ def get_file_list_for_network() -> list[dict]:
         }
         for f in app_state.shared_files
     ]
+
+
+def find_received_file_by_hash(file_hash: str) -> Optional[SharedFile]:
+    """Search the received/ directory for a file matching the given hash."""
+    received_dir = os.path.join(os.path.dirname(__file__), "..", "..", "received")
+    received_dir = os.path.abspath(received_dir)
+    if not os.path.isdir(received_dir):
+        return None
+    for entry in os.listdir(received_dir):
+        filepath = os.path.join(received_dir, entry)
+        if not os.path.isfile(filepath):
+            continue
+        h = sha256_hash_file(filepath)
+        if h == file_hash:
+            return SharedFile(
+                filename=entry,
+                filepath=filepath,
+                size=os.path.getsize(filepath),
+                sha256_hash=h,
+                owner_id=app_state.peer_id,
+                signature=None,
+            )
+    return None

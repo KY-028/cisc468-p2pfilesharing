@@ -27,8 +27,8 @@ from app.network.messages import (
     file_list_request, file_list_response, error_message,
 )
 from app.network.transport import send_message, receive_message
-from app.storage.files import get_file_by_hash, get_file_by_name, get_file_list_for_network
-from app.storage.manifests import store_manifest, verify_file_hash
+from app.storage.files import get_file_by_hash, get_file_by_name, get_file_list_for_network, find_received_file_by_hash
+from app.storage.manifests import store_manifest, verify_file_hash, get_manifest, get_all_manifests
 from app.crypto.hashing import sha256_hash
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,51 @@ def get_received_dir() -> str:
     return os.path.abspath(RECEIVED_DIR)
 
 
+def _verify_owner_signature(filename: str, file_hash: str, sender_id: str) -> None:
+    """Check the file's owner signature from cached manifests and log the result."""
+    from app.storage.manifests import verify_file_signature
+
+    # Search all manifests for an entry matching this file hash
+    for owner_id, manifest in get_all_manifests().items():
+        for entry in manifest.files:
+            if entry.sha256_hash != file_hash:
+                continue
+            if not entry.signature:
+                app_state.add_status(
+                    f"File '{filename}' owner ({owner_id}) did not sign this file. "
+                    f"Cannot verify original owner authenticity.",
+                    level="warning"
+                )
+                return
+            # We need the owner's public key
+            owner_peer = app_state.peers.get(owner_id)
+            if not owner_peer or not owner_peer.public_key_pem:
+                app_state.add_status(
+                    f"File '{filename}' is owned by {owner_id} but their public key "
+                    f"is not available. Owner signature cannot be verified.",
+                    level="warning"
+                )
+                return
+            ok = verify_file_signature(
+                file_hash, entry.signature, owner_peer.public_key_pem
+            )
+            if ok:
+                owner_name = owner_peer.display_name if owner_peer else owner_id
+                app_state.add_status(
+                    f"Owner signature verified ✓ — '{filename}' authenticity "
+                    f"confirmed from original owner {owner_name}"
+                    + (f" (served by {sender_id})" if sender_id != owner_id else ""),
+                    level="success"
+                )
+            else:
+                app_state.add_status(
+                    f"Owner signature INVALID for '{filename}'! "
+                    f"File may have been tampered with!",
+                    level="error"
+                )
+            return
+
+
 # ---------------------------------------------------------------------------
 # Outgoing requests: we initiate
 # ---------------------------------------------------------------------------
@@ -50,6 +95,9 @@ def get_received_dir() -> str:
 def request_file_from_peer(peer_id: str, filename: str, file_hash: str = "") -> Optional[TransferRecord]:
     """
     Send a FILE_REQUEST to a peer asking for a specific file.
+
+    If the peer is offline, looks up the file hash from cached manifests
+    and broadcasts the request to all online trusted peers that may have it.
 
     Creates a transfer record to track the request status.
 
@@ -78,16 +126,79 @@ def request_file_from_peer(peer_id: str, filename: str, file_hash: str = "") -> 
     )
     app_state.transfers.append(record)
 
-    # Send the FILE_REQUEST message
-    try:
-        msg = file_request(app_state.peer_id, filename, file_hash or "0" * 64)
-        with socket.create_connection((peer.address, peer.port), timeout=10) as sock:
-            send_message(sock, msg)
-        app_state.add_status(f"Requested '{filename}' from {peer_id}", level="info")
-    except Exception as e:
+    # If the peer is online, try a direct request
+    if peer.online:
+        try:
+            msg = file_request(app_state.peer_id, filename, file_hash or "0" * 64)
+            with socket.create_connection((peer.address, peer.port), timeout=10) as sock:
+                send_message(sock, msg)
+            app_state.add_status(f"Requested '{filename}' from {peer_id}", level="info")
+            return record
+        except Exception as e:
+            logger.warning(f"Direct request to {peer_id} failed: {e}")
+            app_state.add_status(
+                f"Direct request to {peer_id} failed, searching other peers…",
+                level="warning"
+            )
+            # Fall through to broadcast
+
+    # Peer is offline (or direct request failed) — broadcast to other peers
+    # First, resolve the file hash from the cached manifest if we don't have it
+    if not file_hash:
+        manifest = get_manifest(peer_id)
+        if manifest:
+            for entry in manifest.files:
+                if entry.filename == filename:
+                    file_hash = entry.sha256_hash
+                    break
+
+    if not file_hash:
         record.status = "failed"
-        record.error = str(e)
-        app_state.add_status(f"Failed to request '{filename}': {e}", level="error")
+        record.error = "Peer is offline and file hash is unknown"
+        app_state.add_status(
+            f"Cannot request '{filename}': {peer_id} is offline and no cached file hash available.",
+            level="error"
+        )
+        return record
+
+    app_state.add_status(
+        f"Peer {peer_id} is offline. Broadcasting search for '{filename}' "
+        f"(hash {file_hash[:12]}…) to all online peers…",
+        level="info"
+    )
+
+    # Search all online trusted peers
+    sent_to = []
+    for other_id, other_peer in app_state.peers.items():
+        if other_id == peer_id or other_id == app_state.peer_id:
+            continue
+        if not other_peer.online or not other_peer.trusted:
+            continue
+        try:
+            msg = file_request(app_state.peer_id, filename, file_hash)
+            with socket.create_connection(
+                (other_peer.address, other_peer.port), timeout=10
+            ) as sock:
+                send_message(sock, msg)
+            sent_to.append(other_peer.display_name or other_id)
+            logger.info(f"Broadcast FILE_REQUEST to {other_id} for hash {file_hash[:12]}")
+        except Exception as e:
+            logger.warning(f"Failed to broadcast FILE_REQUEST to {other_id}: {e}")
+
+    if sent_to:
+        app_state.add_status(
+            f"File request broadcast to {len(sent_to)} online peer(s): "
+            f"{', '.join(sent_to)}. Waiting for responses…",
+            level="info"
+        )
+    else:
+        record.status = "failed"
+        record.error = "No online trusted peers available"
+        app_state.add_status(
+            f"Cannot retrieve '{filename}': {peer_id} is offline and "
+            f"no other trusted peers are online to serve it.",
+            level="error"
+        )
 
     return record
 
@@ -164,8 +275,12 @@ def handle_file_request(msg: dict, sock, addr) -> None:
     file_hash = payload.get("file_hash", "")
     logger.info(f"consent.handle_file_request ← {peer_id} wants '{filename}', creating consent prompt")
 
-    # Check if we have the file
+    # Check if we have the file (shared files first, then received files)
     shared = get_file_by_name(filename) or get_file_by_hash(file_hash)
+    if not shared and file_hash:
+        shared = find_received_file_by_hash(file_hash)
+        if shared:
+            logger.info(f"File '{filename}' found in received/ directory (hash match)")
     if not shared:
         # Send error back
         err = error_message(app_state.peer_id, "FILE_NOT_FOUND",
@@ -278,11 +393,31 @@ def handle_file_send(msg: dict, sock, addr) -> None:
         level="success"
     )
 
-    # Update any matching transfer records
+    # Cross-peer verification: if the file was originally owned by someone
+    # else, verify the owner's signature from the cached manifest.
+    _verify_owner_signature(filename, actual_hash, peer_id)
+
+    # Update any matching transfer records.
+    # Match by filename and hash — the file may arrive from a different peer
+    # than originally requested (broadcast fallback).
+    matched = False
     for t in app_state.transfers:
-        if t.filename == filename and t.peer_id == peer_id and t.status == "pending":
+        if t.filename == filename and t.status == "pending":
             t.status = "complete"
+            if t.peer_id != peer_id:
+                app_state.add_status(
+                    f"File '{filename}' originally requested from {t.peer_id} "
+                    f"was served by {peer_id} (cross-peer retrieval) ✓",
+                    level="success"
+                )
+            matched = True
             break
+    if not matched:
+        # Still mark any same-filename transfer as complete
+        for t in app_state.transfers:
+            if t.filename == filename and t.peer_id == peer_id and t.status == "pending":
+                t.status = "complete"
+                break
 
 
 def handle_consent_request(msg: dict, sock, addr) -> None:
