@@ -67,12 +67,14 @@ function escapeHtml(text) {
 // ============================================================
 function getPeerStatusClass(peer) {
     if (peer.online && peer.trusted) return "online-verified";
+    if (peer.online && peer.verify_pending) return "online-pending";
     if (peer.online && !peer.trusted) return "online-unverified";
     return "offline";
 }
 
 function getPeerStatusLabel(peer) {
     if (peer.online && peer.trusted) return "Verified";
+    if (peer.online && peer.verify_pending) return "Pending";
     if (peer.online && !peer.trusted) return "Unverified";
     return "Offline";
 }
@@ -256,6 +258,8 @@ function updatePeerDetailView() {
     const trustedEl = document.getElementById("peer-detail-trusted");
     if (peer.trusted) {
         trustedEl.innerHTML = '<span class="status-badge verified">✓ Verified</span>';
+    } else if (peer.verify_pending) {
+        trustedEl.innerHTML = '<span class="status-badge pending">⏳ Waiting for peer…</span>';
     } else {
         trustedEl.innerHTML = '<span class="status-badge unverified">Not Verified</span>';
     }
@@ -264,6 +268,11 @@ function updatePeerDetailView() {
     const verifyBtn = document.getElementById("btn-verify-peer");
     if (peer.trusted) {
         verifyBtn.textContent = "✓ Already Verified";
+        verifyBtn.disabled = true;
+        verifyBtn.classList.add("btn-secondary");
+        verifyBtn.classList.remove("btn-primary");
+    } else if (peer.verify_pending) {
+        verifyBtn.textContent = "⏳ Waiting for Peer…";
         verifyBtn.disabled = true;
         verifyBtn.classList.add("btn-secondary");
         verifyBtn.classList.remove("btn-primary");

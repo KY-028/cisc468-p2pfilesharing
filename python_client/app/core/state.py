@@ -113,6 +113,10 @@ class AppState:
         # List of peers awaiting manual verification code confirmation
         self.pending_verifications: list[dict] = []
 
+        # Mutual verification tracking
+        self.verify_confirmed_by_me: set[str] = set()    # peer_ids we locally confirmed
+        self.verify_confirmed_by_peer: set[str] = set()  # peer_ids that sent us VERIFY_CONFIRM
+
     def add_status(self, message: str, level: str = "info") -> None:
         """Add a status message to the log."""
         self.status_log.append(StatusMessage(

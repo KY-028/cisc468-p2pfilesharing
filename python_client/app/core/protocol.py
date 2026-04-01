@@ -48,6 +48,7 @@ class MessageType:
     CONSENT_REQUEST     = "CONSENT_REQUEST"
     CONSENT_RESPONSE    = "CONSENT_RESPONSE"
     REVOKE_KEY          = "REVOKE_KEY"
+    VERIFY_CONFIRM      = "VERIFY_CONFIRM"
     ERROR               = "ERROR"
 
 
@@ -77,6 +78,7 @@ REQUIRED_PAYLOAD_FIELDS: dict[str, list[str]] = {
     MessageType.CONSENT_REQUEST:       ["peer_id", "action", "filename"],
     MessageType.CONSENT_RESPONSE:      ["peer_id", "request_id", "approved"],
     MessageType.REVOKE_KEY:            ["peer_id", "new_public_key"],
+    MessageType.VERIFY_CONFIRM:        ["peer_id"],
     MessageType.ERROR:                 ["peer_id", "code", "description"],
 }
 

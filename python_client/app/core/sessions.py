@@ -238,3 +238,39 @@ def handle_handshake_init(msg: dict, sock, addr) -> None:
         )
         logger.error(f"STS handshake (responder) with {peer_id} failed: {e}")
         sts.destroy()
+
+
+# ---------------------------------------------------------------------------
+# VERIFY_CONFIRM handler — peer says they accepted the verification code
+# ---------------------------------------------------------------------------
+
+def handle_verify_confirm(msg: dict, sock, addr) -> None:
+    """
+    Handle an incoming VERIFY_CONFIRM from a peer.
+
+    Records that the remote peer has confirmed. If we also confirmed
+    locally, both sides agree and the peer is marked trusted.
+    """
+    peer_id = msg["payload"]["peer_id"]
+    logger.info(f"sessions.handle_verify_confirm ← {peer_id} confirmed verification")
+
+    app_state.verify_confirmed_by_peer.add(peer_id)
+
+    # If we already confirmed our side, mutual verification is complete
+    if peer_id in app_state.verify_confirmed_by_me:
+        peer = app_state.peers.get(peer_id)
+        if peer:
+            peer.trusted = True
+        app_state.verify_confirmed_by_me.discard(peer_id)
+        app_state.verify_confirmed_by_peer.discard(peer_id)
+        app_state.add_status(
+            f"✓ Peer {peer_id} is now VERIFIED. Both sides confirmed.",
+            level="success"
+        )
+        logger.info(f"Mutual verification complete for {peer_id}")
+    else:
+        app_state.add_status(
+            f"Peer {peer_id} confirmed verification. Waiting for you to confirm…",
+            level="info"
+        )
+        logger.info(f"Peer {peer_id} confirmed, awaiting local confirmation")

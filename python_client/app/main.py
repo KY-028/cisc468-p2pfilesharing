@@ -41,7 +41,7 @@ from app.core.consent import (
     handle_consent_response,
 )
 from app.core.revocation import handle_revoke_key
-from app.core.sessions import handle_handshake_init
+from app.core.sessions import handle_handshake_init, handle_verify_confirm
 from app.core.protocol import MessageType
 
 # Set up logging
@@ -202,6 +202,7 @@ def _handle_incoming_message(msg: dict, sock, addr) -> None:
         MessageType.CONSENT_REQUEST:     handle_consent_request,
         MessageType.CONSENT_RESPONSE:    handle_consent_response,
         MessageType.REVOKE_KEY:          handle_revoke_key,
+        MessageType.VERIFY_CONFIRM:      handle_verify_confirm,
     }
 
     handler = handlers.get(msg_type)

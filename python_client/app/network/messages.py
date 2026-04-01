@@ -208,6 +208,17 @@ def revoke_key(peer_id: str, new_public_key: bytes,
 
 
 # ---------------------------------------------------------------------------
+# Verification
+# ---------------------------------------------------------------------------
+
+def verify_confirm(peer_id: str) -> dict:
+    """Create a VERIFY_CONFIRM message. Signals that this peer has accepted the verification code."""
+    return create_message(MessageType.VERIFY_CONFIRM, {
+        "peer_id": peer_id,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Error
 # ---------------------------------------------------------------------------
 

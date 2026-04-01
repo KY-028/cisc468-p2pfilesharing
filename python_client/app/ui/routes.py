@@ -323,7 +323,15 @@ def verify_peer_route():
 
 @ui_blueprint.route("/api/confirm-verify", methods=["POST"])
 def confirm_verify_route():
-    """Step 2: User confirmed the verification code matches. Mark peer as trusted."""
+    """Step 2: User confirmed the verification code matches.
+
+    Sends a VERIFY_CONFIRM to the peer and records local confirmation.
+    The peer is only marked trusted once BOTH sides have confirmed.
+    """
+    import socket as _socket
+    from app.network.messages import verify_confirm
+    from app.network.transport import send_message as _send
+
     peer_id = request.form.get("peer_id", "").strip()
     if not peer_id:
         return jsonify({"ok": False, "error": "peer_id required"}), 400
@@ -332,14 +340,34 @@ def confirm_verify_route():
     if not peer:
         return jsonify({"ok": False, "error": "Unknown peer"}), 404
 
-    peer.trusted = True
+    # Record that *we* confirmed
+    app_state.verify_confirmed_by_me.add(peer_id)
     app_state.pending_verifications = [pv for pv in app_state.pending_verifications if pv["peer_id"] != peer_id]
-    
+
+    # Notify the peer that we confirmed
+    try:
+        with _socket.create_connection((peer.address, peer.port), timeout=10) as sock:
+            msg = verify_confirm(app_state.peer_id)
+            _send(sock, msg)
+    except Exception as e:
+        logger.error(f"Failed to send VERIFY_CONFIRM to {peer_id}: {e}")
+
+    # Check if the other side already confirmed too
+    if peer_id in app_state.verify_confirmed_by_peer:
+        peer.trusted = True
+        app_state.verify_confirmed_by_me.discard(peer_id)
+        app_state.verify_confirmed_by_peer.discard(peer_id)
+        app_state.add_status(
+            f"✓ Peer {peer_id} is now VERIFIED. Both sides confirmed.",
+            level="success"
+        )
+        return jsonify({"ok": True, "verified": True})
+
     app_state.add_status(
-        f"✓ Peer {peer_id} is now VERIFIED. Identity confirmed.",
-        level="success"
+        f"You confirmed verification for {peer_id}. Waiting for them to confirm…",
+        level="info"
     )
-    return jsonify({"ok": True, "verified": True})
+    return jsonify({"ok": True, "verified": False, "waiting": True})
 
 
 @ui_blueprint.route("/api/reject-verify", methods=["POST"])
@@ -355,6 +383,8 @@ def reject_verify_route():
         peer.trusted = False
 
     app_state.pending_verifications = [pv for pv in app_state.pending_verifications if pv["peer_id"] != peer_id]
+    app_state.verify_confirmed_by_me.discard(peer_id)
+    app_state.verify_confirmed_by_peer.discard(peer_id)
 
     # Destroy the session — it may be compromised
     remove_session(peer_id)
@@ -391,6 +421,7 @@ def get_status():
                 "online": p.online,
                 "fingerprint": p.fingerprint or "unknown",
                 "last_seen": p.last_seen,
+                "verify_pending": p.peer_id in app_state.verify_confirmed_by_me,
             }
             for p in app_state.peers.values()
         ],

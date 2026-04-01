@@ -184,6 +184,11 @@ body {
     box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
 }
 
+.peer-status-dot.online-pending {
+    background: var(--accent);
+    box-shadow: 0 0 6px rgba(59, 130, 246, 0.4);
+}
+
 .peer-status-dot.online-unverified {
     background: var(--warning);
     box-shadow: 0 0 6px rgba(234, 179, 8, 0.4);
@@ -381,6 +386,11 @@ body {
 .status-badge.verified {
     background: var(--success-bg);
     color: var(--success);
+}
+
+.status-badge.pending {
+    background: var(--warning-bg, #fef3cd);
+    color: var(--warning, #856404);
 }
 
 /* ------- Item Lists (files, consents) ------- */
