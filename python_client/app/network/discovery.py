@@ -142,10 +142,16 @@ class PeerDiscovery:
                 last_seen=time.time(),
             )
             app_state.peers[peer_id] = peer
-            app_state.add_status(
-                f"Discovered peer: {peer_id} at {address}:{info.port}",
-                level="success"
-            )
+            if trusted:
+                app_state.add_status(
+                    f"Trusted peer back online: {peer_id} at {address}:{info.port}",
+                    level="success"
+                )
+            else:
+                app_state.add_status(
+                    f"Discovered peer: {peer_id} at {address}:{info.port}",
+                    level="success"
+                )
             logger.info(f"mDNS: Discovered {peer_id} at {address}:{info.port}")
 
         elif state_change == ServiceStateChange.Removed:

@@ -388,6 +388,7 @@ def confirm_verify_route():
             f"✓ Peer {peer_id} is now VERIFIED. Both sides confirmed.",
             level="success"
         )
+        app_state.save_trusted_peers()
         # Auto-fetch file list now that the peer is verified
         from app.core.sessions import _auto_fetch_file_list
         _auto_fetch_file_list(peer_id)

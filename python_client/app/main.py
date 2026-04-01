@@ -156,8 +156,17 @@ def _init_identity(tcp_port: int) -> None:
     app_state._private_key = private_key
     app_state._public_key = public_key
 
+    # Derive a deterministic peer ID from the public key fingerprint
+    # so the ID stays the same across restarts.
+    fp_short = app_state.fingerprint.replace(":", "")[:8].lower()
+    app_state.peer_id = f"peer-{fp_short}"
+    app_state.display_name = app_state.peer_id
+
     # Initialize persistent manifest storage in the same data dir
     init_manifest_storage(data_dir)
+
+    # Initialize trust persistence in the same data dir
+    app_state.init_trust_storage(data_dir)
 
     logger.info(f"Peer ID: {app_state.peer_id}")
     logger.info(f"Fingerprint: {app_state.fingerprint}")

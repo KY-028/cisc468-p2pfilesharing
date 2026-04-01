@@ -9,6 +9,8 @@ Reading order: Read this FIRST to understand the data model.
 """
 
 import uuid
+import json
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -116,6 +118,67 @@ class AppState:
         # Mutual verification tracking
         self.verify_confirmed_by_me: set[str] = set()    # peer_ids we locally confirmed
         self.verify_confirmed_by_peer: set[str] = set()  # peer_ids that sent us VERIFY_CONFIRM
+
+        # Directory for persisting trust records (set by init_trust_storage)
+        self._trust_file: Optional[str] = None
+
+    # ----- Trust persistence -----
+
+    def init_trust_storage(self, data_dir: str) -> None:
+        """Set the file path for trust persistence and load saved records."""
+        self._trust_file = os.path.join(data_dir, "trusted_peers.json")
+        self._load_trusted_peers()
+
+    def _load_trusted_peers(self) -> None:
+        """Load trusted peer records from disk."""
+        if not self._trust_file or not os.path.isfile(self._trust_file):
+            return
+        try:
+            with open(self._trust_file, "r", encoding="utf-8") as f:
+                records = json.load(f)
+            for peer_id, info in records.items():
+                peer = self.peers.get(peer_id)
+                if not peer:
+                    # Create an offline placeholder so trust survives until
+                    # the peer is re-discovered via mDNS.
+                    peer = PeerInfo(
+                        peer_id=peer_id,
+                        display_name=peer_id,
+                        address=info.get("address", ""),
+                        port=info.get("port", 0),
+                        trusted=True,
+                        online=False,
+                        fingerprint=info.get("fingerprint"),
+                        public_key_pem=info.get("public_key_pem"),
+                    )
+                    self.peers[peer_id] = peer
+                else:
+                    peer.trusted = True
+                    if info.get("fingerprint"):
+                        peer.fingerprint = info["fingerprint"]
+                    if info.get("public_key_pem"):
+                        peer.public_key_pem = info["public_key_pem"]
+        except Exception:
+            pass
+
+    def save_trusted_peers(self) -> None:
+        """Persist all trusted peer records to disk."""
+        if not self._trust_file:
+            return
+        records = {}
+        for peer_id, peer in self.peers.items():
+            if peer.trusted:
+                records[peer_id] = {
+                    "address": peer.address,
+                    "port": peer.port,
+                    "fingerprint": peer.fingerprint,
+                    "public_key_pem": peer.public_key_pem,
+                }
+        try:
+            with open(self._trust_file, "w", encoding="utf-8") as f:
+                json.dump(records, f)
+        except Exception:
+            pass
 
     def add_status(self, message: str, level: str = "info") -> None:
         """Add a status message to the log."""

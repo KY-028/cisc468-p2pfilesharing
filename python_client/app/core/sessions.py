@@ -290,6 +290,7 @@ def handle_verify_confirm(msg: dict, sock, addr) -> None:
             level="success"
         )
         logger.info(f"Mutual verification complete for {peer_id}")
+        app_state.save_trusted_peers()
         _auto_fetch_file_list(peer_id)
     else:
         app_state.add_status(

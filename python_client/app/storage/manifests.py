@@ -70,8 +70,19 @@ def _save_manifest(peer_id: str, file_list: list[dict]) -> None:
     if not path:
         return
     try:
+        # Ensure all values are JSON-serializable (signatures may be bytes
+        # after protocol deserialization — convert back to base64 strings)
+        safe_list = []
+        for entry in file_list:
+            safe_entry = {}
+            for k, v in entry.items():
+                if isinstance(v, bytes):
+                    safe_entry[k] = base64.b64encode(v).decode("ascii")
+                else:
+                    safe_entry[k] = v
+            safe_list.append(safe_entry)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(file_list, f)
+            json.dump(safe_list, f)
     except Exception as e:
         logger.error(f"Failed to persist manifest for {peer_id}: {e}")
 
@@ -118,12 +129,17 @@ def store_manifest(peer_id: str, file_list: list[dict]) -> PeerManifest:
     logger.info(f"manifests.store_manifest → storing {len(file_list)} files from {peer_id}")
     entries = []
     for f in file_list:
+        # Signature may arrive as bytes (after protocol base64 decoding)
+        # — convert to base64 string for consistent in-memory storage
+        sig = f.get("signature")
+        if isinstance(sig, bytes):
+            sig = base64.b64encode(sig).decode("ascii")
         entries.append(ManifestEntry(
             filename=f.get("filename", ""),
             size=f.get("size", 0),
             sha256_hash=f.get("sha256_hash", ""),
             owner_id=f.get("owner_id", peer_id),
-            signature=f.get("signature"),
+            signature=sig,
         ))
 
     manifest = PeerManifest(peer_id=peer_id, files=entries)
