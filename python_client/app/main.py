@@ -125,12 +125,10 @@ def _get_local_ip() -> str:
 
 def _init_identity(tcp_port: int) -> None:
     """Generate or load the RSA-2048 identity key pair."""
-    # Use IP + port as the directory name so that different machines
-    # (same port) and different local instances (same IP, different port)
-    # each get a unique identity key.
-    local_ip = _get_local_ip()
-    ip_tag = local_ip.replace(".", "_")
-    data_dir = os.path.join(os.path.dirname(__file__), "..", f"data_{ip_tag}_{tcp_port}")
+    # Use only the port as the directory name. The port uniquely identifies
+    # each local instance, and avoids the long IP prefix that makes multiple
+    # local instances hard to distinguish (e.g. data_9000 vs data_9002).
+    data_dir = os.path.join(os.path.dirname(__file__), "..", f"data_{tcp_port}")
     key_file = os.path.join(data_dir, "identity_key.pem")
 
     os.makedirs(data_dir, exist_ok=True)

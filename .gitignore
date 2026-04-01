@@ -208,3 +208,4 @@ __marimo__/
 
 # Application data (generated keys, etc.)
 python_client/data/
+python_client/data*/
