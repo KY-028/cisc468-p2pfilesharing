@@ -32,6 +32,7 @@ from app.crypto.keys import (
 from app.network.transport import TCPServer, receive_message, send_message
 from app.network.discovery import PeerDiscovery
 from app.storage.files import scan_shared_directory
+from app.storage.manifests import init_manifest_storage
 from app.core.consent import (
     handle_file_list_request,
     handle_file_list_response,
@@ -41,7 +42,7 @@ from app.core.consent import (
     handle_consent_response,
 )
 from app.core.revocation import handle_revoke_key
-from app.core.sessions import handle_handshake_init, handle_verify_confirm
+from app.core.sessions import handle_handshake_init, handle_verify_confirm, handle_verify_reject
 from app.core.protocol import MessageType
 
 # Set up logging
@@ -155,6 +156,9 @@ def _init_identity(tcp_port: int) -> None:
     app_state._private_key = private_key
     app_state._public_key = public_key
 
+    # Initialize persistent manifest storage in the same data dir
+    init_manifest_storage(data_dir)
+
     logger.info(f"Peer ID: {app_state.peer_id}")
     logger.info(f"Fingerprint: {app_state.fingerprint}")
 
@@ -203,6 +207,7 @@ def _handle_incoming_message(msg: dict, sock, addr) -> None:
         MessageType.CONSENT_RESPONSE:    handle_consent_response,
         MessageType.REVOKE_KEY:          handle_revoke_key,
         MessageType.VERIFY_CONFIRM:      handle_verify_confirm,
+        MessageType.VERIFY_REJECT:       handle_verify_reject,
     }
 
     handler = handlers.get(msg_type)

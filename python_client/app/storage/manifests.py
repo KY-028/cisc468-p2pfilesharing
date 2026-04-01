@@ -4,12 +4,15 @@ manifests.py — File manifest management.
 A "manifest" is the list of files a peer is sharing, along with their
 metadata (hash, size, owner signature). This module handles:
   - Storing manifests received from other peers
+  - Persisting manifests to disk so they survive restarts
   - Verifying file integrity against manifest hashes
   - Verifying owner signatures on file hashes
 
 Reading order: Read files.py first, then this file.
 """
 
+import json
+import os
 import base64
 import logging
 from typing import Optional
@@ -43,6 +46,63 @@ class PeerManifest:
 # ---------------------------------------------------------------------------
 _peer_manifests: dict[str, PeerManifest] = {}
 
+# Directory for persisting manifests (set by init_manifest_storage)
+_manifest_dir: Optional[str] = None
+
+
+def init_manifest_storage(data_dir: str) -> None:
+    """Set the directory where manifests are persisted and load any saved ones."""
+    global _manifest_dir
+    _manifest_dir = os.path.join(data_dir, "manifests")
+    os.makedirs(_manifest_dir, exist_ok=True)
+    _load_all_manifests()
+
+
+def _manifest_path(peer_id: str) -> Optional[str]:
+    if not _manifest_dir:
+        return None
+    safe_name = peer_id.replace(os.sep, "_").replace("/", "_")
+    return os.path.join(_manifest_dir, f"{safe_name}.json")
+
+
+def _save_manifest(peer_id: str, file_list: list[dict]) -> None:
+    path = _manifest_path(peer_id)
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(file_list, f)
+    except Exception as e:
+        logger.error(f"Failed to persist manifest for {peer_id}: {e}")
+
+
+def _load_all_manifests() -> None:
+    if not _manifest_dir or not os.path.isdir(_manifest_dir):
+        return
+    for fname in os.listdir(_manifest_dir):
+        if not fname.endswith(".json"):
+            continue
+        peer_id = fname[:-5]  # strip .json
+        path = os.path.join(_manifest_dir, fname)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                file_list = json.load(f)
+            # Store in memory without re-saving to disk
+            entries = [
+                ManifestEntry(
+                    filename=e.get("filename", ""),
+                    size=e.get("size", 0),
+                    sha256_hash=e.get("sha256_hash", ""),
+                    owner_id=e.get("owner_id", peer_id),
+                    signature=e.get("signature"),
+                )
+                for e in file_list
+            ]
+            _peer_manifests[peer_id] = PeerManifest(peer_id=peer_id, files=entries)
+            logger.info(f"Loaded saved manifest for {peer_id}: {len(entries)} files")
+        except Exception as e:
+            logger.error(f"Failed to load manifest {fname}: {e}")
+
 
 def store_manifest(peer_id: str, file_list: list[dict]) -> PeerManifest:
     """
@@ -69,6 +129,10 @@ def store_manifest(peer_id: str, file_list: list[dict]) -> PeerManifest:
     manifest = PeerManifest(peer_id=peer_id, files=entries)
     _peer_manifests[peer_id] = manifest
     logger.info(f"Stored manifest for {peer_id}: {len(entries)} files")
+
+    # Persist to disk so it survives restarts
+    _save_manifest(peer_id, file_list)
+
     return manifest
 
 
@@ -120,7 +184,10 @@ def verify_file_signature(data_hash: str, signature_b64: str,
     """
     try:
         logger.info(f"manifests.verify_file_signature → verifying owner sig for hash={data_hash[:12]}…")
-        public_key = deserialize_public_key(owner_public_key_pem)
+        pub_pem = owner_public_key_pem
+        if isinstance(pub_pem, str):
+            pub_pem = pub_pem.encode("utf-8")
+        public_key = deserialize_public_key(pub_pem)
         signature_bytes = base64.b64decode(signature_b64)
         hash_bytes = data_hash.encode("utf-8")
         return verify_signature(public_key, hash_bytes, signature_bytes)

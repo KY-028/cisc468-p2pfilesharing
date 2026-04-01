@@ -218,6 +218,13 @@ def verify_confirm(peer_id: str) -> dict:
     })
 
 
+def verify_reject(peer_id: str) -> dict:
+    """Create a VERIFY_REJECT message. Signals that this peer rejected the verification code."""
+    return create_message(MessageType.VERIFY_REJECT, {
+        "peer_id": peer_id,
+    })
+
+
 # ---------------------------------------------------------------------------
 # Error
 # ---------------------------------------------------------------------------

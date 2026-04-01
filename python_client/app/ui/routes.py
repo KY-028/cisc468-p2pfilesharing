@@ -373,7 +373,11 @@ def confirm_verify_route():
 @ui_blueprint.route("/api/reject-verify", methods=["POST"])
 def reject_verify_route():
     """User rejected the verification — codes didn't match. Possible MITM."""
+    import socket as _socket
     from app.core.sessions import remove_session
+    from app.network.messages import verify_reject
+    from app.network.transport import send_message as _send
+
     peer_id = request.form.get("peer_id", "").strip()
     if not peer_id:
         return jsonify({"ok": False, "error": "peer_id required"}), 400
@@ -385,6 +389,15 @@ def reject_verify_route():
     app_state.pending_verifications = [pv for pv in app_state.pending_verifications if pv["peer_id"] != peer_id]
     app_state.verify_confirmed_by_me.discard(peer_id)
     app_state.verify_confirmed_by_peer.discard(peer_id)
+
+    # Notify the peer that we rejected, so they leave the "waiting" state
+    if peer and peer.online:
+        try:
+            with _socket.create_connection((peer.address, peer.port), timeout=10) as sock:
+                msg = verify_reject(app_state.peer_id)
+                _send(sock, msg)
+        except Exception as e:
+            logger.error(f"Failed to send VERIFY_REJECT to {peer_id}: {e}")
 
     # Destroy the session — it may be compromised
     remove_session(peer_id)

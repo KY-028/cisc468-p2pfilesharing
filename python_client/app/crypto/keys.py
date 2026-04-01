@@ -63,6 +63,8 @@ def deserialize_public_key(pem_bytes: bytes):
     Raises:
         ValueError: If the PEM data is invalid.
     """
+    if isinstance(pem_bytes, str):
+        pem_bytes = pem_bytes.encode("utf-8")
     return serialization.load_pem_public_key(pem_bytes)
 
 

@@ -72,6 +72,22 @@ def _update_peer_key(peer_id: str, sts: STSSession) -> None:
         peer.fingerprint = get_fingerprint(sts.peer_rsa_public)
 
 
+def _auto_fetch_file_list(peer_id: str) -> None:
+    """Fetch the peer's file list immediately after handshake so we cache it."""
+    import threading
+
+    def _fetch():
+        try:
+            from app.core.consent import request_file_list_from_peer
+            request_file_list_from_peer(peer_id)
+            logger.info(f"Auto-fetched file list from {peer_id}")
+        except Exception as e:
+            logger.warning(f"Auto-fetch file list from {peer_id} failed: {e}")
+
+    # Run in background thread to avoid blocking the handshake connection
+    threading.Thread(target=_fetch, daemon=True).start()
+
+
 # ---------------------------------------------------------------------------
 # INITIATOR: we start the handshake before sending a file
 # ---------------------------------------------------------------------------
@@ -137,6 +153,7 @@ def initiate_handshake(peer_id: str, address: str, port: int) -> Optional[bytes]
         )
         logger.info(f"STS handshake completed with {peer_id} (initiator)")
 
+        _auto_fetch_file_list(peer_id)
         sts.destroy()
         return session_key
 
@@ -229,6 +246,7 @@ def handle_handshake_init(msg: dict, sock, addr) -> None:
         )
         logger.info(f"STS handshake completed with {peer_id} (responder)")
 
+        _auto_fetch_file_list(peer_id)
         sts.destroy()
 
     except Exception as e:
@@ -274,3 +292,34 @@ def handle_verify_confirm(msg: dict, sock, addr) -> None:
             level="info"
         )
         logger.info(f"Peer {peer_id} confirmed, awaiting local confirmation")
+
+
+# ---------------------------------------------------------------------------
+# VERIFY_REJECT handler — peer says they rejected the verification code
+# ---------------------------------------------------------------------------
+
+def handle_verify_reject(msg: dict, sock, addr) -> None:
+    """
+    Handle an incoming VERIFY_REJECT from a peer.
+
+    Clears any pending verification state so the local side is no longer
+    stuck in "waiting for peer".
+    """
+    peer_id = msg["payload"]["peer_id"]
+    logger.info(f"sessions.handle_verify_reject ← {peer_id} rejected verification")
+
+    app_state.verify_confirmed_by_me.discard(peer_id)
+    app_state.verify_confirmed_by_peer.discard(peer_id)
+
+    peer = app_state.peers.get(peer_id)
+    if peer:
+        peer.trusted = False
+
+    # Destroy the session — it may be compromised
+    remove_session(peer_id)
+
+    app_state.add_status(
+        f"⚠ Peer {peer_id} REJECTED verification. "
+        f"Codes did not match on their end — possible MITM. Session destroyed.",
+        level="error"
+    )
