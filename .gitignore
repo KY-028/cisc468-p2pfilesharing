@@ -209,3 +209,9 @@ __marimo__/
 # Application data (generated keys, etc.)
 python_client/data/
 python_client/data*/
+python_client/.vs/
+
+cs_client/P2PFT_Cs/publish/
+cs_client/P2PFT_Cs/.vs/
+
+.vs/
