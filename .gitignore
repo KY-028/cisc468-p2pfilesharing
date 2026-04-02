@@ -215,3 +215,6 @@ cs_client/P2PFT_Cs/publish/
 cs_client/P2PFT_Cs/.vs/
 
 .vs/
+
+.DS_Store
+*/.DS_Store

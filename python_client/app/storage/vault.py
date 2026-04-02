@@ -143,7 +143,7 @@ def unlock_vault(password: str) -> bytes:
     return key
 
 
-def change_vault_password(old_password: str, new_password: str) -> None:
+def change_vault_password(old_password: str, new_password: str) -> list[str]:
     """
     Change the vault password by re-encrypting all vault files with a new key.
 
@@ -154,10 +154,14 @@ def change_vault_password(old_password: str, new_password: str) -> None:
       4. Commit by atomically replacing files and config.
       5. On any failure, restore from backups and keep old config.
 
+    Returns:
+        A list of filenames that could not be re-encrypted because they
+        were undecryptable with the current key.
+
     Raises:
         FileNotFoundError: vault config is missing.
         InvalidTag: old password is wrong.
-        RuntimeError: re-encryption failed and was rolled back.
+        RuntimeError: re-encryption commit failed and was rolled back.
     """
     if len(new_password) < 8:
         raise ValueError("New password must be at least 8 characters.")
@@ -190,6 +194,7 @@ def change_vault_password(old_password: str, new_password: str) -> None:
 
     temp_map: list[tuple[str, str]] = []
     backup_map: list[tuple[str, str]] = []
+    skipped_files: list[str] = []
     config_tmp = config_path + ".tmp"
 
     try:
@@ -198,11 +203,16 @@ def change_vault_password(old_password: str, new_password: str) -> None:
                 old_blob = f.read()
             try:
                 plaintext = vault_decrypt_data(old_key, old_blob)
-            except InvalidTag as exc:
-                raise RuntimeError(
-                    "Vault file is corrupt or undecryptable with the current key: "
+            except InvalidTag:
+                # If one file is undecryptable (mixed legacy data or corruption),
+                # continue re-encrypting decryptable files so valid password changes
+                # do not fail entirely.
+                skipped_files.append(os.path.basename(original_path))
+                logger.warning(
+                    "Skipping undecryptable vault file during key rotation: "
                     f"{os.path.basename(original_path)}"
-                ) from exc
+                )
+                continue
             new_blob = vault_encrypt_data(new_key, plaintext)
 
             tmp_path = original_path + ".rekeytmp"
@@ -232,7 +242,7 @@ def change_vault_password(old_password: str, new_password: str) -> None:
                 os.remove(tmp_path)
         if os.path.exists(config_tmp):
             os.remove(config_tmp)
-        raise RuntimeError("Vault key change failed due to undecryptable vault data.")
+        raise
     except Exception as exc:
         for original_path, backup_path in backup_map:
             if os.path.exists(backup_path):
@@ -250,6 +260,7 @@ def change_vault_password(old_password: str, new_password: str) -> None:
 
     set_vault_key(new_key)
     logger.info("Vault key changed successfully (files re-encrypted with new key).")
+    return skipped_files
 
 
 def set_vault_key(key: bytes) -> None:
