@@ -210,16 +210,26 @@
                                                        Foreground="{StaticResource TextPrimaryBrush}"
                                                        Text="👤  My Identity"
                                                        VerticalAlignment="Center"/>
-                                            <Button Style="{StaticResource BtnSmall}"
-                                                    Background="{StaticResource ErrorBgBrush}"
-                                                    Foreground="{StaticResource ErrorBrush}"
-                                                    BorderBrush="{StaticResource ErrorBrush}"
-                                                    BorderThickness="1"
-                                                    Content="🔑 Rotate Keys"
-                                                    DockPanel.Dock="Right"
-                                                    HorizontalAlignment="Right"
-                                                    Click="OnRotateOwnKey"
-                                                    ToolTip="Generate a new RSA-2048 key pair and broadcast the revocation to all verified peers."/>
+                                            <StackPanel Orientation="Horizontal"
+                                                        DockPanel.Dock="Right" HorizontalAlignment="Right">
+                                                <Button Style="{StaticResource BtnSmall}"
+                                                        Background="{StaticResource BgInputBrush}"
+                                                        Foreground="{StaticResource TextSecondaryBrush}"
+                                                        BorderBrush="{StaticResource AppBorderBrush}"
+                                                        BorderThickness="1"
+                                                        Content="🔒 Change Password"
+                                                        Margin="0,0,6,0"
+                                                        Click="OnChangeVaultPassword"
+                                                        ToolTip="Change the password used to encrypt your vault and identity file."/>
+                                                <Button Style="{StaticResource BtnSmall}"
+                                                        Background="{StaticResource ErrorBgBrush}"
+                                                        Foreground="{StaticResource ErrorBrush}"
+                                                        BorderBrush="{StaticResource ErrorBrush}"
+                                                        BorderThickness="1"
+                                                        Content="🔑 Rotate Keys"
+                                                        Click="OnRotateOwnKey"
+                                                        ToolTip="Generate a new RSA-2048 key pair and broadcast the revocation to all verified peers."/>
+                                            </StackPanel>
                                         </DockPanel>
                                     </Border>
                                     <StackPanel Margin="16,10">

@@ -39,7 +39,7 @@ namespace P2PFT_Cs
 
         // ── Identity & state ─────────────────────────────────────────
         private readonly string _peerId;
-        private readonly string _password;
+        private string _password;
         private readonly string _userId;
 
         /// <summary>Discovered peers keyed by peer_id.</summary>
@@ -78,11 +78,22 @@ namespace P2PFT_Cs
         private readonly List<StatusEntry> _statusLog = new List<StatusEntry>();
         private readonly object _statusLock = new object();
 
+        /// <summary>Sends waiting for a session key to be established before they can proceed.</summary>
+        private readonly ConcurrentDictionary<string, PendingSendInfo> _pendingRetrySends =
+            new ConcurrentDictionary<string, PendingSendInfo>();
+
         /// <summary>
         /// Raised immediately when a new consent request is received
         /// (file_request or file_send). Passes the ConsentRecord.
         /// </summary>
         public event Action<ConsentRecord> ConsentReceived;
+
+        /// <summary>
+        /// Raised when a file send is blocked by a missing session key.
+        /// The subscriber should initiate a handshake with the given peerId;
+        /// the send will be retried automatically once SetSessionKey is called.
+        /// </summary>
+        public event Action<string> HandshakeNeeded;
 
         // ── Constructor ──────────────────────────────────────────────
 
@@ -127,6 +138,15 @@ namespace P2PFT_Cs
                 throw new ArgumentException("Session key must be exactly 32 bytes.", nameof(sessionKey));
 
             _sessionKeys[peerId] = sessionKey;
+
+            // Retry any send that was queued while waiting for this session
+            PendingSendInfo queued;
+            if (_pendingRetrySends.TryRemove(peerId, out queued))
+            {
+                AddStatus("Session established with " + peerId +
+                          " — resuming send of '" + queued.Filename + "'…", "info");
+                SendFileToPeer(queued);
+            }
         }
 
         // ================================================================
@@ -934,9 +954,11 @@ namespace P2PFT_Cs
             byte[] sessionKey;
             if (!_sessionKeys.TryGetValue(info.PeerId, out sessionKey))
             {
-                AddStatus("Cannot send '" + info.Filename +
-                          "': no active session with " + info.PeerId +
-                          ". Handshake required.", "error");
+                // Queue the send and request a handshake; will retry via SetSessionKey
+                _pendingRetrySends[info.PeerId] = info;
+                AddStatus("No active session with " + info.PeerId +
+                          " — initiating handshake before sending '" + info.Filename + "'…", "info");
+                HandshakeNeeded?.Invoke(info.PeerId);
                 return;
             }
 
@@ -1031,6 +1053,30 @@ namespace P2PFT_Cs
         public void ClearAllSessionKeys()
         {
             _sessionKeys.Clear();
+        }
+
+        /// <summary>
+        /// Re-encrypts all vault files in the received directory with a new password,
+        /// then updates the internal password used for future saves.
+        /// </summary>
+        public void UpdatePassword(string newPassword)
+        {
+            if (string.IsNullOrEmpty(newPassword))
+                throw new ArgumentException("Password must not be empty.", nameof(newPassword));
+
+            string receivedDir = GetReceivedDir();
+            foreach (string file in Directory.GetFiles(receivedDir, "*.p2pf"))
+            {
+                byte[] plaintext;
+                try { plaintext = LocalFileCrypto.DecryptFromFile(file, _password, _userId); }
+                catch { continue; }
+                try
+                {
+                    LocalFileCrypto.EncryptToFile(plaintext, newPassword, _userId, file);
+                }
+                finally { Array.Clear(plaintext, 0, plaintext.Length); }
+            }
+            _password = newPassword;
         }
 
         // ── Helpers ──────────────────────────────────────────────────

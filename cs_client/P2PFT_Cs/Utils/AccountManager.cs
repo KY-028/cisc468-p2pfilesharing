@@ -125,6 +125,24 @@ namespace P2PFT_Cs.Utils
         }
 
         /// <summary>
+        /// Re-encrypts the profile file with a new password and updates the stored hash.
+        /// </summary>
+        public void ChangeVaultPassword(string newPassword)
+        {
+            if (Profile == null)
+                throw new InvalidOperationException("Profile not initialized. Call Initialize() first.");
+            if (string.IsNullOrEmpty(newPassword))
+                throw new ArgumentException("New password must not be empty.", nameof(newPassword));
+
+            byte[] salt = GenerateRandom(PasswordSaltSize);
+            Profile.PasswordHash = HashPassword(newPassword, salt);
+            Profile.PasswordSalt = Convert.ToBase64String(salt);
+
+            byte[] json = SerializeProfile(Profile);
+            LocalFileCrypto.EncryptToFile(json, newPassword, _userId, _profilePath);
+        }
+
+        /// <summary>
         /// Re-generates a fresh RSA-2048 key pair (key rotation) and saves the profile.
         /// Returns the new public key PEM for redistribution.
         /// </summary>

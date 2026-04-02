@@ -234,6 +234,31 @@ namespace P2PFT_Cs
             }
         }
 
+        // ── Change vault password ─────────────────────────────────
+
+        private void OnChangeVaultPassword(object sender, RoutedEventArgs e)
+        {
+            var dlg = new ChangePasswordDialog { Owner = this };
+            bool keepTrying = true;
+            while (keepTrying && dlg.ShowDialog() == true)
+            {
+                string error = _vm.ChangeVaultPassword(
+                    dlg.CurrentPasswordValue,
+                    dlg.NewPasswordValue,
+                    dlg.ConfirmPasswordValue);
+
+                if (error == null)
+                {
+                    MessageBox.Show("Vault password changed successfully.",
+                        "Password Changed", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                dlg = new ChangePasswordDialog { Owner = this };
+                dlg.ShowError(error);
+            }
+        }
+
         // ── Own key rotation ─────────────────────────────────────
 
         private void OnRotateOwnKey(object sender, RoutedEventArgs e)

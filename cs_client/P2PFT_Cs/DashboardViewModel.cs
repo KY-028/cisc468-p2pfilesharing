@@ -217,6 +217,28 @@ namespace P2PFT_Cs
             catch (Exception) { VaultError = "Incorrect password or corrupted vault config."; }
         }
 
+        /// <summary>
+        /// Changes the vault password. Re-encrypts the identity profile and all vault files.
+        /// Returns null on success, or an error message string on failure.
+        /// </summary>
+        public string ChangeVaultPassword(string currentPassword, string newPassword, string confirmPassword)
+        {
+            if (string.IsNullOrEmpty(currentPassword)) return "Please enter your current password.";
+            if (currentPassword != _vaultPassword) return "Current password is incorrect.";
+            if (string.IsNullOrEmpty(newPassword) || newPassword.Length < 8)
+                return "New password must be at least 8 characters.";
+            if (newPassword != confirmPassword) return "New passwords do not match.";
+
+            try
+            {
+                _account.ChangeVaultPassword(newPassword);
+                _fileTransfer?.UpdatePassword(newPassword);
+                _vaultPassword = newPassword;
+                return null;
+            }
+            catch (Exception ex) { return "Failed to change password: " + ex.Message; }
+        }
+
         // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Engine bootstrap
         // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
@@ -225,6 +247,7 @@ namespace P2PFT_Cs
         {
             _fileTransfer = new FileTransfer(userId, password, userId);
             _fileTransfer.ConsentReceived += OnConsentReceived;
+            _fileTransfer.HandshakeNeeded += OnHandshakeNeeded;
 
             _validation = new PeerValidation(userId, _account, _fileTransfer);
             _validation.PeerVerified += OnPeerVerified;
@@ -384,6 +407,17 @@ namespace P2PFT_Cs
                 ShowNotification(consent.PeerName + " wants to " + action +
                                  " \"" + consent.Filename + "\"", consent.RequestId);
             }));
+        }
+
+        private void OnHandshakeNeeded(string peerId)
+        {
+            var peer = Peers.FirstOrDefault(p => p.PeerId == peerId);
+            if (peer == null || string.IsNullOrEmpty(peer.Address)) return;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try { _validation.InitiateHandshake(peerId, peer.Address, peer.Port); }
+                catch { }
+            });
         }
 
         // ── Notification helpers ─────────────────────────────────
