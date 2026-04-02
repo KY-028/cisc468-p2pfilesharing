@@ -115,8 +115,41 @@ def rotate_key() -> dict:
         level="info"
     )
 
+    # Local trust reset after identity rotation:
+    # - online peers must be re-verified (downgrade to untrusted)
+    # - offline trusted placeholders are removed
+    #   because trust can no longer be considered valid for the new key
+    online_downgraded = 0
+    offline_removed = 0
+    from app.storage.manifests import clear_manifest
+    peer_ids = set(app_state.peers.keys())
+    app_state.pending_verifications = [
+        pv for pv in app_state.pending_verifications
+        if pv.get("peer_id") not in peer_ids
+    ]
+    for peer_id, peer in list(app_state.peers.items()):
+        app_state.verify_confirmed_by_me.discard(peer_id)
+        app_state.verify_confirmed_by_peer.discard(peer_id)
+
+        if peer.online:
+            if peer.trusted:
+                online_downgraded += 1
+            peer.trusted = False
+        else:
+            offline_removed += 1
+            clear_manifest(peer_id)
+            app_state.peers.pop(peer_id, None)
+
+    app_state.save_trusted_peers()
+    app_state.add_status(
+        f"Local trust reset: {online_downgraded} online peer(s) marked unverified, "
+        f"{offline_removed} offline peer(s) removed (manifests cleared).",
+        level="warning"
+    )
+
     # Step 5: Notify all known peers
-    for peer_id, peer in app_state.peers.items():
+    known_peers = list(app_state.peers.items())
+    for peer_id, peer in known_peers:
         try:
             _notify_peer_of_revocation(peer, new_pub_pem, cross_signature)
             result["peers_notified"] += 1
@@ -126,7 +159,7 @@ def rotate_key() -> dict:
             logger.error(error_msg)
 
     app_state.add_status(
-        f"Notified {result['peers_notified']}/{len(app_state.peers)} peers of key rotation.",
+        f"Notified {result['peers_notified']}/{len(known_peers)} peers of key rotation.",
         level="info"
     )
 

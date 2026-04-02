@@ -30,6 +30,7 @@ from app.network.messages import (
 )
 from app.network.transport import send_message, receive_message
 from app.crypto.keys import serialize_public_key, get_fingerprint
+from app.core.verification import generate_verification_code
 
 logger = logging.getLogger(__name__)
 
@@ -225,16 +226,10 @@ def handle_handshake_init(msg: dict, sock, addr) -> None:
 
         peer = app_state.peers.get(peer_id)
         if peer and not peer.trusted:
-            import hashlib
             my_fp = app_state.fingerprint or ""
             their_fp = peer.fingerprint or ""
-            if my_fp and their_fp and their_fp != "unknown":
-                combined = "\n".join(sorted([my_fp, their_fp]))
-                code_hash = hashlib.sha256(combined.encode()).hexdigest()
-                code_int = int(code_hash[:24], 16)
-                code_digits = str(code_int).zfill(30)[:30]
-                verification_code = " ".join(code_digits[i:i+5] for i in range(0, 30, 5))
-                
+            verification_code = generate_verification_code(my_fp, their_fp)
+            if verification_code:
                 app_state.pending_verifications.append({
                     "peer_id": peer_id,
                     "peer_name": peer.display_name,

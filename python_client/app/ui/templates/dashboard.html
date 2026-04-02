@@ -24,27 +24,6 @@
 
         <!-- Default view: my files + status -->
         <div id="view-home" class="view active">
-            <!-- Identity Card -->
-            <section class="card">
-                <div class="card-header">
-                    <h2><span class="icon">👤</span> My Identity</h2>
-                </div>
-                <div class="card-body">
-                    <div class="info-row">
-                        <span class="info-label">Peer ID</span>
-                        <code id="identity-peer-id" class="info-value mono">{{ state.peer_id }}</code>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Fingerprint</span>
-                        <code id="identity-fingerprint" class="info-value mono small">{{ state.fingerprint or "(generating…)" }}</code>
-                    </div>
-                    <div class="info-row">
-                        <span class="info-label">Status</span>
-                        <span class="status-badge online">Online</span>
-                    </div>
-                </div>
-            </section>
-
             <!-- My Shared Files -->
             <section class="card">
                 <div class="card-header">
@@ -89,7 +68,8 @@
                 </div>
                 <div class="card-body">
                     <div id="vault-file-list" class="item-list">
-                        <p class="empty-state">No files stored in the vault yet. Received files are encrypted here automatically.</p>
+                        <p class="empty-state">No files stored in the vault yet. Received files are encrypted here
+                            automatically.</p>
                     </div>
                 </div>
             </section>

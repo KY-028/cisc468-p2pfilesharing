@@ -25,8 +25,6 @@ from app.core.protocol import (
 )
 from app.network.messages import (
     peer_announce,
-    peer_list_request,
-    peer_list_response,
     key_exchange_init,
     key_exchange_response,
     key_exchange_confirm,
@@ -73,7 +71,7 @@ class TestValidateMessage:
 
     def _make_valid(self) -> dict:
         """Helper: build a minimal valid message."""
-        return create_message(MessageType.PEER_LIST_REQUEST, {
+        return create_message(MessageType.FILE_LIST_REQUEST, {
             "peer_id": "peer-test",
         })
 
@@ -188,14 +186,6 @@ class TestMessageBuilders:
         msg = peer_announce("p1", 9000)
         validate_message(msg)
         assert msg["type"] == MessageType.PEER_ANNOUNCE
-
-    def test_peer_list_request(self):
-        msg = peer_list_request("p1")
-        validate_message(msg)
-
-    def test_peer_list_response(self):
-        msg = peer_list_response("p1", [{"peer_id": "p2", "address": "1.2.3.4", "port": 9000}])
-        validate_message(msg)
 
     def test_key_exchange_init(self):
         msg = key_exchange_init("p1", ephemeral_public_key=b"fake-eph-key")

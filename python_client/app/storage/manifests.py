@@ -213,5 +213,12 @@ def verify_file_signature(data_hash: str, signature_b64: str,
 
 
 def clear_manifest(peer_id: str) -> None:
-    """Remove a peer's manifest (e.g., when they disconnect)."""
+    """Remove a peer's manifest from memory and persisted storage."""
     _peer_manifests.pop(peer_id, None)
+    path = _manifest_path(peer_id)
+    if path and os.path.isfile(path):
+        try:
+            os.remove(path)
+            logger.info(f"Deleted manifest file for {peer_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete manifest file for {peer_id}: {e}")

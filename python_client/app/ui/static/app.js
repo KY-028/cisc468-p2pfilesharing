@@ -11,6 +11,7 @@ const POLL_INTERVAL_MS = 3000;
 let selectedPeerId = null;
 let currentConsentId = null;
 let lastData = null;
+let identityPanelOpen = false;
 
 
 // ============================================================
@@ -510,6 +511,142 @@ async function scanFiles() {
 
 
 // ============================================================
+// Identity Panel + Key Management
+// ============================================================
+function toggleIdentityPanel() {
+    const panel = document.getElementById("identity-panel");
+    const trigger = document.getElementById("identity-trigger");
+    if (!panel || !trigger) return;
+
+    identityPanelOpen = !identityPanelOpen;
+    panel.classList.toggle("hidden", !identityPanelOpen);
+    trigger.setAttribute("aria-expanded", identityPanelOpen ? "true" : "false");
+}
+
+function closeIdentityPanel() {
+    const panel = document.getElementById("identity-panel");
+    const trigger = document.getElementById("identity-trigger");
+    if (!panel || !trigger) return;
+
+    identityPanelOpen = false;
+    panel.classList.add("hidden");
+    trigger.setAttribute("aria-expanded", "false");
+}
+
+function showRotateKeyModal() {
+    const modal = document.getElementById("rotate-key-modal");
+    if (modal) {
+        modal.classList.remove("hidden");
+    }
+}
+
+function hideRotateKeyModal() {
+    const modal = document.getElementById("rotate-key-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+    }
+}
+
+function showVaultKeyModal() {
+    const modal = document.getElementById("vault-key-modal");
+    const feedback = document.getElementById("vault-key-feedback");
+    const form = document.getElementById("vault-key-form");
+    if (modal) {
+        modal.classList.remove("hidden");
+    }
+    if (form) {
+        form.reset();
+    }
+    if (feedback) {
+        feedback.className = "vault-key-feedback hidden";
+        feedback.textContent = "";
+    }
+}
+
+function hideVaultKeyModal() {
+    const modal = document.getElementById("vault-key-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+    }
+}
+
+function setVaultKeyFeedback(message, level) {
+    const feedback = document.getElementById("vault-key-feedback");
+    if (!feedback) return;
+    feedback.textContent = message;
+    feedback.className = `vault-key-feedback ${level}`;
+}
+
+async function rotateIdentityKey() {
+    const confirmButton = document.getElementById("rotate-key-confirm");
+    if (confirmButton) {
+        confirmButton.disabled = true;
+        confirmButton.textContent = "Rotating...";
+    }
+
+    const result = await apiPost("/api/rotate-key");
+    hideRotateKeyModal();
+    closeIdentityPanel();
+    await pollStatus();
+
+    if (confirmButton) {
+        confirmButton.disabled = false;
+        confirmButton.textContent = "Rotate Key";
+    }
+
+    if (!result.ok) {
+        alert(result.error || "Key rotation failed.");
+    }
+}
+
+async function submitVaultKeyChange(event) {
+    event.preventDefault();
+    const oldPassword = document.getElementById("vault-old-password")?.value || "";
+    const newPassword = document.getElementById("vault-new-password")?.value || "";
+    const confirmPassword = document.getElementById("vault-confirm-password")?.value || "";
+    const submitButton = document.getElementById("vault-key-submit");
+
+    if (newPassword !== confirmPassword) {
+        setVaultKeyFeedback("New passwords do not match.", "error");
+        return;
+    }
+
+    if (newPassword.length < 8) {
+        setVaultKeyFeedback("New password must be at least 8 characters.", "error");
+        return;
+    }
+
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = "Updating...";
+    }
+
+    const result = await apiPost("/api/vault/change-password", {
+        old_password: oldPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+    });
+
+    if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Update Vault Key";
+    }
+
+    if (!result.ok) {
+        setVaultKeyFeedback(result.error || "Vault key change failed.", "error");
+        return;
+    }
+
+    setVaultKeyFeedback("Vault key updated successfully.", "success");
+    await pollStatus();
+    setTimeout(() => {
+        hideVaultKeyModal();
+        closeIdentityPanel();
+    }, 700);
+}
+
+
+// ============================================================
 // Consent Modal
 // ============================================================
 function showConsentModal(requestId, peerName, action, filename) {
@@ -543,9 +680,18 @@ async function pollStatus() {
         const data = await resp.json();
         lastData = data;
 
-        // Update identity
-        document.getElementById("identity-peer-id").textContent = data.peer_id;
-        document.getElementById("identity-fingerprint").textContent = data.fingerprint;
+        // Update identity panel
+        const navPeerId = document.getElementById("navbar-peer-id-value");
+        const identityPeerId = document.getElementById("identity-peer-id");
+        const identityFingerprint = document.getElementById("identity-fingerprint");
+        const identityStatus = document.getElementById("identity-status-badge");
+        if (navPeerId) navPeerId.textContent = data.peer_id;
+        if (identityPeerId) identityPeerId.textContent = data.peer_id;
+        if (identityFingerprint) identityFingerprint.textContent = data.fingerprint;
+        if (identityStatus) {
+            identityStatus.className = "status-badge online";
+            identityStatus.textContent = "Online";
+        }
 
         // Update sidebar
         renderPeerSidebar(data.peers);
@@ -579,6 +725,58 @@ async function pollStatus() {
 // Event Listeners
 // ============================================================
 document.addEventListener("DOMContentLoaded", () => {
+    const identityTrigger = document.getElementById("identity-trigger");
+    const identityClose = document.getElementById("identity-close");
+    const identityPanel = document.getElementById("identity-panel");
+    const rotateKeyButton = document.getElementById("btn-rotate-key");
+    const vaultKeyButton = document.getElementById("btn-change-vault-key");
+
+    if (identityTrigger) {
+        identityTrigger.addEventListener("click", (event) => {
+            event.stopPropagation();
+            toggleIdentityPanel();
+        });
+    }
+    if (identityClose) {
+        identityClose.addEventListener("click", closeIdentityPanel);
+    }
+    if (rotateKeyButton) {
+        rotateKeyButton.addEventListener("click", showRotateKeyModal);
+    }
+    if (vaultKeyButton) {
+        vaultKeyButton.addEventListener("click", showVaultKeyModal);
+    }
+
+    document.getElementById("rotate-key-cancel")?.addEventListener("click", hideRotateKeyModal);
+    document.getElementById("rotate-key-modal-backdrop")?.addEventListener("click", hideRotateKeyModal);
+    document.getElementById("rotate-key-confirm")?.addEventListener("click", rotateIdentityKey);
+
+    document.getElementById("vault-key-cancel")?.addEventListener("click", hideVaultKeyModal);
+    document.getElementById("vault-key-modal-backdrop")?.addEventListener("click", hideVaultKeyModal);
+    document.getElementById("vault-key-form")?.addEventListener("submit", submitVaultKeyChange);
+
+    document.addEventListener("click", (event) => {
+        if (!identityPanelOpen || !identityPanel || !identityTrigger) return;
+        const clickInsidePanel = identityPanel.contains(event.target);
+        const clickOnTrigger = identityTrigger.contains(event.target);
+        if (!clickInsidePanel && !clickOnTrigger) {
+            closeIdentityPanel();
+        }
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            closeIdentityPanel();
+            hideRotateKeyModal();
+            hideVaultKeyModal();
+        }
+    });
+
+    const dashboardPresent = !!document.getElementById("peer-list");
+    if (!dashboardPresent) {
+        return;
+    }
+
     // Refresh peers
     document.getElementById("btn-refresh-peers").addEventListener("click", async () => {
         await apiPost("/api/refresh-peers");

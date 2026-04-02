@@ -32,6 +32,7 @@ import json
 import logging
 from typing import Optional, Any
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.exceptions import InvalidTag
 from app.crypto.kdf import pbkdf2_derive_key, generate_salt
 
 logger = logging.getLogger(__name__)
@@ -72,9 +73,12 @@ def initialize_vault(password: str) -> bytes:
     First-time vault setup.
 
     1. Generate a cryptographically random 16-byte salt.
-    2. Save *only* the salt to ``vault_config.json``.
-    3. Derive a 32-byte AES key via PBKDF2-HMAC-SHA256 (600 000 iters).
-    4. Hold the derived key in RAM (``_vault_key``).
+    2. Derive a 32-byte AES key via PBKDF2-HMAC-SHA256 (600 000 iters).
+    3. Encrypt a known sentinel value with the key so we can verify the
+       password on subsequent unlocks.
+    4. Save *only* the salt and the encrypted sentinel to
+       ``vault_config.json`` — the password and key are **never** saved.
+    5. Hold the derived key in RAM (``_vault_key``).
 
     Args:
         password: The user's chosen vault password.
@@ -83,10 +87,19 @@ def initialize_vault(password: str) -> bytes:
         The derived 32-byte AES key.
     """
     salt = generate_salt(SALT_SIZE)
+    key = pbkdf2_derive_key(password, salt)
+
+    # Create a verification token: encrypt a known sentinel so we can
+    # detect wrong passwords at unlock time instead of failing silently.
+    sentinel = b"vault-password-ok"
+    verify_blob = vault_encrypt_data(key, sentinel)
+
     config_path = os.path.join(get_vault_dir(), "vault_config.json")
     with open(config_path, "w", encoding="utf-8") as f:
-        json.dump({"salt": salt.hex()}, f)
-    key = pbkdf2_derive_key(password, salt)
+        json.dump({
+            "salt": salt.hex(),
+            "verify_token": verify_blob.hex(),
+        }, f)
     set_vault_key(key)
     logger.info("Vault initialized (salt saved, key derived and held in RAM).")
     return key
@@ -97,7 +110,8 @@ def unlock_vault(password: str) -> bytes:
     Unlock the vault on subsequent launches.
 
     Reads the saved salt from ``vault_config.json``, derives the AES key,
-    and stores it in RAM.
+    verifies it against the stored verification token, and stores the key
+    in RAM.
 
     Args:
         password: The user's vault password.
@@ -107,6 +121,7 @@ def unlock_vault(password: str) -> bytes:
 
     Raises:
         FileNotFoundError: If ``vault_config.json`` does not exist.
+        cryptography.exceptions.InvalidTag: If the password is wrong.
     """
     config_path = os.path.join(get_vault_dir(), "vault_config.json")
     if not os.path.isfile(config_path):
@@ -115,9 +130,126 @@ def unlock_vault(password: str) -> bytes:
         config = json.load(f)
     salt = bytes.fromhex(config["salt"])
     key = pbkdf2_derive_key(password, salt)
+
+    # Verify the password by decrypting the stored sentinel.
+    # If the password is wrong, AESGCM will raise InvalidTag.
+    verify_hex = config.get("verify_token")
+    if verify_hex:
+        verify_blob = bytes.fromhex(verify_hex)
+        vault_decrypt_data(key, verify_blob)  # raises InvalidTag on wrong pw
+
     set_vault_key(key)
     logger.info("Vault unlocked (key derived from password + stored salt).")
     return key
+
+
+def change_vault_password(old_password: str, new_password: str) -> None:
+    """
+    Change the vault password by re-encrypting all vault files with a new key.
+
+    The operation is fail-closed:
+      1. Verify the old password against the stored verification token.
+      2. Derive a new key using a fresh random salt.
+      3. Re-encrypt all `.vault` files to temporary files first.
+      4. Commit by atomically replacing files and config.
+      5. On any failure, restore from backups and keep old config.
+
+    Raises:
+        FileNotFoundError: vault config is missing.
+        InvalidTag: old password is wrong.
+        RuntimeError: re-encryption failed and was rolled back.
+    """
+    if len(new_password) < 8:
+        raise ValueError("New password must be at least 8 characters.")
+
+    config_path = os.path.join(get_vault_dir(), "vault_config.json")
+    if not os.path.isfile(config_path):
+        raise FileNotFoundError("Vault not initialized — no vault_config.json")
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    old_salt = bytes.fromhex(config["salt"])
+    old_key = pbkdf2_derive_key(old_password, old_salt)
+
+    verify_hex = config.get("verify_token")
+    if verify_hex:
+        verify_blob = bytes.fromhex(verify_hex)
+        vault_decrypt_data(old_key, verify_blob)
+
+    new_salt = generate_salt(SALT_SIZE)
+    new_key = pbkdf2_derive_key(new_password, new_salt)
+    new_verify_blob = vault_encrypt_data(new_key, b"vault-password-ok")
+
+    vault_dir = get_vault_dir()
+    vault_files = [
+        os.path.join(vault_dir, name)
+        for name in os.listdir(vault_dir)
+        if name.endswith(".vault")
+    ]
+
+    temp_map: list[tuple[str, str]] = []
+    backup_map: list[tuple[str, str]] = []
+    config_tmp = config_path + ".tmp"
+
+    try:
+        for original_path in vault_files:
+            with open(original_path, "rb") as f:
+                old_blob = f.read()
+            try:
+                plaintext = vault_decrypt_data(old_key, old_blob)
+            except InvalidTag as exc:
+                raise RuntimeError(
+                    "Vault file is corrupt or undecryptable with the current key: "
+                    f"{os.path.basename(original_path)}"
+                ) from exc
+            new_blob = vault_encrypt_data(new_key, plaintext)
+
+            tmp_path = original_path + ".rekeytmp"
+            with open(tmp_path, "wb") as f:
+                f.write(new_blob)
+            temp_map.append((original_path, tmp_path))
+
+        with open(config_tmp, "w", encoding="utf-8") as f:
+            json.dump({
+                "salt": new_salt.hex(),
+                "verify_token": new_verify_blob.hex(),
+            }, f)
+
+        for original_path, tmp_path in temp_map:
+            backup_path = original_path + ".rekeybak"
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+            os.replace(original_path, backup_path)
+            backup_map.append((original_path, backup_path))
+            os.replace(tmp_path, original_path)
+
+        os.replace(config_tmp, config_path)
+
+    except InvalidTag:
+        for _, tmp_path in temp_map:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        if os.path.exists(config_tmp):
+            os.remove(config_tmp)
+        raise RuntimeError("Vault key change failed due to undecryptable vault data.")
+    except Exception as exc:
+        for original_path, backup_path in backup_map:
+            if os.path.exists(backup_path):
+                os.replace(backup_path, original_path)
+        for _, tmp_path in temp_map:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        if os.path.exists(config_tmp):
+            os.remove(config_tmp)
+        raise RuntimeError(f"Vault key change failed: {exc}") from exc
+    finally:
+        for _, backup_path in backup_map:
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+
+    set_vault_key(new_key)
+    logger.info("Vault key changed successfully (files re-encrypted with new key).")
 
 
 def set_vault_key(key: bytes) -> None:

@@ -32,27 +32,6 @@ def peer_announce(peer_id: str, port: int,
     return create_message(MessageType.PEER_ANNOUNCE, payload)
 
 
-def peer_list_request(peer_id: str) -> dict:
-    """Create a PEER_LIST_REQUEST message."""
-    return create_message(MessageType.PEER_LIST_REQUEST, {
-        "peer_id": peer_id,
-    })
-
-
-def peer_list_response(peer_id: str, peers: list[dict]) -> dict:
-    """
-    Create a PEER_LIST_RESPONSE message.
-
-    Args:
-        peer_id: This peer's ID.
-        peers: List of dicts, each with at least 'peer_id', 'address', 'port'.
-    """
-    return create_message(MessageType.PEER_LIST_RESPONSE, {
-        "peer_id": peer_id,
-        "peers": peers,
-    })
-
-
 # ---------------------------------------------------------------------------
 # Key Exchange Messages
 # ---------------------------------------------------------------------------
