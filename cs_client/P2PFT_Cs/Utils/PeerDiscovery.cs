@@ -1,30 +1,25 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Threading;
 using P2PFT_Cs.DataObj;
+using P2PFT_Cs.Utils;
 
 namespace P2PFT_Cs
 {
     /// <summary>
-    /// UDP broadcast peer discovery + TCP listener for incoming messages.
+    /// mDNS peer discovery + TCP listener for incoming messages.
     ///
     /// Discovery flow:
-    ///   1. Broadcasts a PEER_ANNOUNCE every <see cref="AnnounceIntervalMs"/>
-    ///      on UDP port <see cref="DiscoveryPort"/>.
-    ///   2. Listens for PEER_ANNOUNCE from other peers on the same port.
+    ///   1. Advertises this peer via mDNS on _p2pshare._tcp.local.
+    ///   2. Browses for other peers advertising the same service.
     ///   3. When a new peer is found, registers it with
     ///      <see cref="FileTransfer.RegisterPeer"/> and raises
     ///      <see cref="PeerDiscovered"/>.
-    ///   4. If a peer hasn't announced for <see cref="PeerTimeoutMs"/>,
-    ///      it's marked offline.
+    ///   4. When a peer stops advertising, raises <see cref="PeerOffline"/>.
     ///
     /// Also runs a TCP listener that receives protocol messages and
     /// dispatches them to <see cref="FileTransfer"/> and
@@ -32,33 +27,24 @@ namespace P2PFT_Cs
     /// </summary>
     internal class PeerDiscovery : IDisposable
     {
-        // ©¤©¤ Constants ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
-        private const int DiscoveryPort = 9876;
-        private const int AnnounceIntervalMs = 5000;
-        private const int PeerTimeoutMs = 20000;
+        // â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private const int HeaderSize = 4;
         private const int MaxMessageSize = 64 * 1024 * 1024;
         private const int TcpReadTimeoutMs = 30000;
 
-        // ©¤©¤ Identity ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+        // ï¿½ï¿½ï¿½ï¿½ Identity ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
         private readonly string _peerId;
         private readonly int _tcpPort;
         private readonly FileTransfer _fileTransfer;
         private readonly PeerValidation _validation;
+        private ManifestStorage _manifests;
+        private Func<List<DataObj.FileInfo>> _getSharedFiles;
 
-        // ©¤©¤ Threads / sockets ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
-        private UdpClient _udpSender;
-        private UdpClient _udpListener;
+        // â”€â”€ Threads / sockets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        private MdnsDiscovery _mdns;
         private TcpListener _tcpListener;
-        private Thread _announceThread;
-        private Thread _udpListenThread;
         private Thread _tcpListenThread;
-        private Thread _reapThread;
         private volatile bool _running;
-
-        // ©¤©¤ Discovered peers (last-seen timestamp) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
-        private readonly ConcurrentDictionary<string, double> _lastSeen =
-            new ConcurrentDictionary<string, double>();
 
         /// <summary>
         /// Raised on the background thread when a new peer appears.
@@ -71,7 +57,7 @@ namespace P2PFT_Cs
         /// </summary>
         public event Action<string> PeerOffline;
 
-        // ©¤©¤ Constructor ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+        // â”€â”€ Constructor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         public PeerDiscovery(string peerId, int tcpPort,
                              FileTransfer fileTransfer,
@@ -90,60 +76,48 @@ namespace P2PFT_Cs
             _validation = validation;
         }
 
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+        public void SetManifestStorage(ManifestStorage manifests)
+        {
+            _manifests = manifests;
+        }
+
+        public void SetSharedFilesCallback(Func<List<DataObj.FileInfo>> callback)
+        {
+            _getSharedFiles = callback;
+        }
+
+        // ï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½T
         //  Start / Stop
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+        // ï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½T
 
         public void Start()
         {
             if (_running) return;
             _running = true;
 
-            // UDP sender ¡ª uses an ephemeral port so it doesn't
-            // conflict with the listener on the same machine.
-            _udpSender = new UdpClient();
-            _udpSender.EnableBroadcast = true;
-
-            // UDP listener ¡ª binds to the discovery port.
-            _udpListener = new UdpClient();
-            _udpListener.Client.SetSocketOption(
-                SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            _udpListener.ExclusiveAddressUse = false;
-            _udpListener.Client.Bind(new IPEndPoint(IPAddress.Any, DiscoveryPort));
+            // mDNS discovery â€” advertise + browse for _p2pshare._tcp.local.
+            _mdns = new MdnsDiscovery(_peerId, _tcpPort);
+            _mdns.PeerFound += OnMdnsPeerFound;
+            _mdns.PeerLost += OnMdnsPeerLost;
+            _mdns.Start();
 
             // TCP listener
             _tcpListener = new TcpListener(IPAddress.Any, _tcpPort);
             _tcpListener.Start();
 
-            _announceThread = new Thread(AnnounceLoop)
-            { IsBackground = true, Name = "P2P-Announce" };
-            _announceThread.Start();
-
-            _udpListenThread = new Thread(UdpListenLoop)
-            { IsBackground = true, Name = "P2P-UdpListen" };
-            _udpListenThread.Start();
-
             _tcpListenThread = new Thread(TcpListenLoop)
             { IsBackground = true, Name = "P2P-TcpListen" };
             _tcpListenThread.Start();
-
-            _reapThread = new Thread(ReapLoop)
-            { IsBackground = true, Name = "P2P-Reaper" };
-            _reapThread.Start();
         }
 
         public void Stop()
         {
             _running = false;
 
-            try { _udpSender?.Close(); } catch { }
-            try { _udpListener?.Close(); } catch { }
+            try { _mdns?.Stop(); } catch { }
             try { _tcpListener?.Stop(); } catch { }
 
-            _announceThread?.Join(2000);
-            _udpListenThread?.Join(2000);
             _tcpListenThread?.Join(2000);
-            _reapThread?.Join(2000);
         }
 
         public void Dispose()
@@ -151,119 +125,20 @@ namespace P2PFT_Cs
             Stop();
         }
 
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-        //  UDP announce (broadcast PEER_ANNOUNCE)
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+        // â”€â”€ mDNS event handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-        private void AnnounceLoop()
+        private void OnMdnsPeerFound(string peerId, string address, int port)
         {
-            while (_running)
-            {
-                try
-                {
-                    // Build the JSON payload manually to avoid
-                    // DataContractJsonSerializer issues with abstract types.
-                    string json = BuildAnnounceJson(_peerId, _tcpPort);
-                    byte[] payload = System.Text.Encoding.UTF8.GetBytes(json);
-                    byte[] header = ToBigEndian(payload.Length);
-                    byte[] packet = new byte[header.Length + payload.Length];
-                    Buffer.BlockCopy(header, 0, packet, 0, header.Length);
-                    Buffer.BlockCopy(payload, 0, packet, header.Length, payload.Length);
-
-                    // Send to all subnet-directed broadcast addresses
-                    // (more reliable than 255.255.255.255)
-                    var broadcastAddresses = GetBroadcastAddresses();
-                    foreach (var addr in broadcastAddresses)
-                    {
-                        try
-                        {
-                            var ep = new IPEndPoint(addr, DiscoveryPort);
-                            _udpSender.Send(packet, packet.Length, ep);
-                        }
-                        catch { /* skip unreachable interface */ }
-                    }
-
-                    // Also send to limited broadcast as fallback
-                    try
-                    {
-                        var fallback = new IPEndPoint(IPAddress.Broadcast, DiscoveryPort);
-                        _udpSender.Send(packet, packet.Length, fallback);
-                    }
-                    catch { }
-                }
-                catch (ObjectDisposedException) { break; }
-                catch { /* best effort */ }
-
-                Thread.Sleep(AnnounceIntervalMs);
-            }
+            _fileTransfer.RegisterPeer(peerId, address, port, peerId, false);
+            PeerDiscovered?.Invoke(peerId, address, port);
         }
 
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-        //  UDP listen (receive PEER_ANNOUNCE from others)
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-
-        private void UdpListenLoop()
+        private void OnMdnsPeerLost(string peerId)
         {
-            while (_running)
-            {
-                try
-                {
-                    var remoteEp = new IPEndPoint(IPAddress.Any, 0);
-                    byte[] data = _udpListener.Receive(ref remoteEp);
-
-                    if (data.Length < HeaderSize) continue;
-
-                    int length = FromBigEndian(data, 0);
-                    if (length <= 0 || length > MaxMessageSize) continue;
-                    if (data.Length < HeaderSize + length) continue;
-
-                    // Parse JSON manually ¡ª DataContractJsonSerializer
-                    // cannot instantiate abstract jsonBody<T> base class.
-                    string json = System.Text.Encoding.UTF8.GetString(
-                        data, HeaderSize, length);
-
-                    string remotePeerId = ExtractJsonString(json, "peer_id");
-                    string portStr = ExtractJsonString(json, "port");
-                    string msgType = ExtractJsonString(json, "type");
-
-                    if (string.IsNullOrEmpty(remotePeerId)) continue;
-                    if (msgType != "PEER_ANNOUNCE") continue;
-
-                    int remoteTcpPort;
-                    if (!int.TryParse(portStr, out remoteTcpPort))
-                    {
-                        // Try extracting port as a number (not quoted)
-                        remoteTcpPort = ExtractJsonInt(json, "port");
-                        if (remoteTcpPort <= 0) continue;
-                    }
-
-                    string remoteAddress = remoteEp.Address.ToString();
-
-                    // Ignore our own announcements
-                    if (remotePeerId == _peerId) continue;
-
-                    double now = GetUnixTimestamp();
-                    bool isNew = !_lastSeen.ContainsKey(remotePeerId);
-                    _lastSeen[remotePeerId] = now;
-
-                    if (isNew)
-                    {
-                        _fileTransfer.RegisterPeer(
-                            remotePeerId, remoteAddress, remoteTcpPort,
-                            remotePeerId, false);
-
-                        PeerDiscovered?.Invoke(remotePeerId, remoteAddress, remoteTcpPort);
-                    }
-                }
-                catch (ObjectDisposedException) { break; }
-                catch (SocketException) { if (!_running) break; }
-                catch { /* ignore malformed packets */ }
-            }
+            PeerOffline?.Invoke(peerId);
         }
 
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-        //  TCP listen (receive all protocol messages)
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+        // â”€â”€ TCP listen (receive all protocol messages) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         private void TcpListenLoop()
         {
@@ -285,34 +160,60 @@ namespace P2PFT_Cs
         {
             try
             {
-                using (client)
-                using (NetworkStream stream = client.GetStream())
+                NetworkStream stream = client.GetStream();
+                string senderAddress =
+                    ((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString();
+
+                byte[] headerBuf = ReadExactly(stream, HeaderSize);
+                if (headerBuf == null) { client.Close(); return; }
+                int length = FromBigEndian(headerBuf, 0);
+
+                if (length <= 0 || length > MaxMessageSize) { client.Close(); return; }
+
+                byte[] payloadBuf = ReadExactly(stream, length);
+                if (payloadBuf == null) { client.Close(); return; }
+
+                string json = System.Text.Encoding.UTF8.GetString(payloadBuf);
+                string messageType = ExtractJsonString(json, "type");
+                if (string.IsNullOrEmpty(messageType)) { client.Close(); return; }
+
+                if (messageType == MessageType.KeyExchangeInit)
                 {
-                    string senderAddress =
-                        ((IPEndPoint)client.Client.RemoteEndPoint).Address.ToString();
-
-                    byte[] headerBuf = ReadExactly(stream, HeaderSize);
-                    if (headerBuf == null) return;
-                    int length = FromBigEndian(headerBuf, 0);
-
-                    if (length <= 0 || length > MaxMessageSize) return;
-
-                    byte[] payloadBuf = ReadExactly(stream, length);
-                    if (payloadBuf == null) return;
-
-                    string json = System.Text.Encoding.UTF8.GetString(payloadBuf);
-                    string messageType = ExtractJsonString(json, "type");
-                    if (string.IsNullOrEmpty(messageType)) return;
-
+                    // STS handshake: pass the socket so PeerValidation can
+                    // send RESPONSE and read CONFIRM on the same connection.
+                    // PeerValidation is responsible for closing the client.
+                    var kxInit = Deserialize<KeyExchangeInitPayload>(payloadBuf);
+                    if (kxInit != null)
+                        _validation.HandleKeyExchangeInit(
+                            kxInit.Payload, client, stream, senderAddress);
+                    else
+                        client.Close();
+                }
+                else if (messageType == MessageType.FileListRequest)
+                {
+                    // Same-socket: respond with our file list on this connection
+                    var flReq = Deserialize<FileListRequestPayload>(payloadBuf);
+                    if (flReq != null && _getSharedFiles != null)
+                        _fileTransfer.HandleFileListRequest(
+                            flReq.Payload, stream, _getSharedFiles);
+                    client.Close();
+                }
+                else
+                {
+                    // All other messages: close socket, dispatch normally
+                    client.Close();
                     DispatchMessage(messageType, payloadBuf, senderAddress);
                 }
             }
-            catch { }
+            catch
+            {
+                try { client.Close(); } catch { }
+            }
         }
 
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+        // ï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½T
         //  Message dispatch
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+        // ï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½Tï¿½T
 
         private void DispatchMessage(string type, byte[] payload, string senderAddress)
         {
@@ -348,21 +249,25 @@ namespace P2PFT_Cs
                     break;
 
                 case MessageType.KeyExchangeInit:
-                    var kxInit = Deserialize<KeyExchangeInitPayload>(payload);
-                    if (kxInit != null)
-                        _validation.HandleKeyExchangeInit(kxInit.Payload, senderAddress);
+                    // Handled directly in HandleTcpClient (same-socket handshake)
                     break;
 
-                case MessageType.KeyExchangeResponse:
-                    var kxResp = Deserialize<KeyExchangeResponsePayload>(payload);
-                    if (kxResp != null)
-                        _validation.HandleKeyExchangeResponse(kxResp.Payload);
+                case MessageType.VerifyConfirm:
+                    var verifyConf = Deserialize<VerifyConfirmPayload>(payload);
+                    if (verifyConf != null)
+                        _validation.HandleVerifyConfirm(verifyConf.Payload);
                     break;
 
-                case MessageType.KeyExchangeConfirm:
-                    var kxConfirm = Deserialize<KeyExchangeConfirmPayload>(payload);
-                    if (kxConfirm != null)
-                        _validation.HandleKeyExchangeConfirm(kxConfirm.Payload);
+                case MessageType.VerifyReject:
+                    var verifyRej = Deserialize<VerifyRejectPayload>(payload);
+                    if (verifyRej != null)
+                        _validation.HandleVerifyReject(verifyRej.Payload);
+                    break;
+
+                case MessageType.FileListResponse:
+                    var flResp = Deserialize<FileListResponsePayload>(payload);
+                    if (flResp != null && _manifests != null)
+                        _fileTransfer.HandleFileListResponse(flResp.Payload, _manifests);
                     break;
 
                 case MessageType.RevokeKey:
@@ -372,71 +277,11 @@ namespace P2PFT_Cs
                     break;
 
                 case MessageType.PeerAnnounce:
-                    break; // Already handled by UDP
+                    break; // Handled by mDNS
             }
         }
 
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-        //  Peer reaper
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-
-        private void ReapLoop()
-        {
-            while (_running)
-            {
-                Thread.Sleep(AnnounceIntervalMs);
-
-                double now = GetUnixTimestamp();
-                double cutoff = now - (PeerTimeoutMs / 1000.0);
-
-                foreach (var kvp in _lastSeen.ToArray())
-                {
-                    if (kvp.Value < cutoff)
-                    {
-                        double removed;
-                        if (_lastSeen.TryRemove(kvp.Key, out removed))
-                        {
-                            PeerOffline?.Invoke(kvp.Key);
-                        }
-                    }
-                }
-            }
-        }
-
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-        //  JSON builders (avoid DataContractJsonSerializer for
-        //  abstract base class)
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-
-        /// <summary>
-        /// Builds a PEER_ANNOUNCE JSON string manually. This avoids the
-        /// deserialization problem with <see cref="jsonBody{T}"/> being
-        /// abstract and having no parameterless constructor.
-        /// </summary>
-        private static string BuildAnnounceJson(string peerId, int port)
-        {
-            double timestamp = GetUnixTimestamp();
-            // Using string concat ¡ª no external JSON library needed on 4.8
-            return "{" +
-                "\"version\":\"1.0\"," +
-                "\"type\":\"PEER_ANNOUNCE\"," +
-                "\"timestamp\":" + timestamp.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
-                "\"payload\":{" +
-                    "\"peer_id\":\"" + EscapeJson(peerId) + "\"," +
-                    "\"port\":" + port +
-                "}" +
-            "}";
-        }
-
-        private static string EscapeJson(string s)
-        {
-            if (s == null) return "";
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        }
-
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-        //  JSON field extraction (lightweight, no full parse)
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+        // â”€â”€ JSON field extraction (lightweight, no full parse) â”€â”€â”€â”€â”€
 
         /// <summary>
         /// Extracts a string value for a given key from a JSON string.
@@ -478,53 +323,7 @@ namespace P2PFT_Cs
             return -1;
         }
 
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-        //  Network helpers
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-
-        /// <summary>
-        /// Computes the subnet-directed broadcast address for each
-        /// active IPv4 network interface. More reliable than
-        /// <c>IPAddress.Broadcast</c> (255.255.255.255) which is
-        /// blocked by many routers and firewalls.
-        /// </summary>
-        private static List<IPAddress> GetBroadcastAddresses()
-        {
-            var result = new List<IPAddress>();
-            try
-            {
-                foreach (var iface in NetworkInterface.GetAllNetworkInterfaces())
-                {
-                    if (iface.OperationalStatus != OperationalStatus.Up) continue;
-                    if (iface.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
-
-                    var props = iface.GetIPProperties();
-                    foreach (var unicast in props.UnicastAddresses)
-                    {
-                        if (unicast.Address.AddressFamily != AddressFamily.InterNetwork)
-                            continue;
-
-                        byte[] addr = unicast.Address.GetAddressBytes();
-                        byte[] mask = unicast.IPv4Mask.GetAddressBytes();
-                        byte[] broadcast = new byte[4];
-                        for (int i = 0; i < 4; i++)
-                            broadcast[i] = (byte)(addr[i] | ~mask[i]);
-
-                        result.Add(new IPAddress(broadcast));
-                    }
-                }
-            }
-            catch { }
-
-            if (result.Count == 0)
-                result.Add(IPAddress.Broadcast); // fallback
-
-            return result;
-        }
-
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
-        //  Helpers
-        // ¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T¨T
+        // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         private FileTransfer.LocalFileInfo LookupLocalFile(string filename, string hash)
         {
@@ -646,6 +445,10 @@ namespace P2PFT_Cs
                 return typeof(ConsentResponseMessage);
             if (payloadType == typeof(RevokeKeyPayload))
                 return typeof(RevokeKeyMessage);
+            if (payloadType == typeof(VerifyConfirmPayload))
+                return typeof(VerifyConfirmMessage);
+            if (payloadType == typeof(VerifyRejectPayload))
+                return typeof(VerifyRejectMessage);
             if (payloadType == typeof(ErrorPayload))
                 return typeof(ErrorMessage);
 

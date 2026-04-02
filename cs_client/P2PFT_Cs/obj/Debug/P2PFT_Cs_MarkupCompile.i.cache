@@ -4,17 +4,17 @@
 winexe
 C#
 .cs
-G:\files\repos\c++_client\P2PFT_Cs\obj\Debug\
+G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\
 P2PFT_Cs
 none
 false
 DEBUG;TRACE
-G:\files\repos\c++_client\P2PFT_Cs\App.xaml
+G:\files\repos\cs_client\P2PFT_Cs\App.xaml
 1219584333
 
-19-135385136
+21-2041138606
 15-1587909608
 MainWindow.xaml;
 
-True
+False
 

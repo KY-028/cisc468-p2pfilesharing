@@ -205,9 +205,22 @@
                                 <StackPanel>
                                     <Border BorderBrush="{StaticResource AppBorderBrush}"
                                             BorderThickness="0,0,0,1" Padding="16,12">
-                                        <TextBlock FontSize="13" FontWeight="SemiBold"
-                                                   Foreground="{StaticResource TextPrimaryBrush}"
-                                                   Text="👤  My Identity"/>
+                                        <DockPanel>
+                                            <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       Text="👤  My Identity"
+                                                       VerticalAlignment="Center"/>
+                                            <Button Style="{StaticResource BtnSmall}"
+                                                    Background="{StaticResource ErrorBgBrush}"
+                                                    Foreground="{StaticResource ErrorBrush}"
+                                                    BorderBrush="{StaticResource ErrorBrush}"
+                                                    BorderThickness="1"
+                                                    Content="🔑 Rotate Keys"
+                                                    DockPanel.Dock="Right"
+                                                    HorizontalAlignment="Right"
+                                                    Click="OnRotateOwnKey"
+                                                    ToolTip="Generate a new RSA-2048 key pair and broadcast the revocation to all verified peers."/>
+                                        </DockPanel>
                                     </Border>
                                     <StackPanel Margin="16,10">
                                         <DockPanel Margin="0,4">
@@ -533,23 +546,31 @@
                                                 Padding="16,10" Click="OnRevokeTrust"/>
                                     </WrapPanel>
 
-                                    <!-- Fingerprint verify input -->
+                                    <!-- Verification code display (Python-style) -->
                                     <StackPanel Margin="16,0,16,14"
-                                                Visibility="{Binding IsVerifyInputVisible,
+                                                Visibility="{Binding SelectedPeer.HasVerificationCode,
                                                              Converter={StaticResource BoolToVis}}">
-                                        <TextBlock Text="Paste the peer's fingerprint to confirm trust:"
+                                        <TextBlock Text="Compare this verification code with the peer:"
                                                    FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                                    Margin="0,0,0,6"/>
-                                        <DockPanel>
-                                            <Button Style="{StaticResource BtnSuccess}" Content="Confirm"
-                                                    DockPanel.Dock="Right" Margin="8,0,0,0"
-                                                    Click="OnConfirmFingerprint"/>
-                                            <TextBox x:Name="FingerprintInput" FontFamily="Consolas"
-                                                     FontSize="11" Padding="8,6"
-                                                     Background="{StaticResource BgInputBrush}"
-                                                     BorderBrush="{StaticResource AppBorderBrush}"
-                                                     BorderThickness="1"/>
-                                        </DockPanel>
+                                        <Border Background="{StaticResource BgInputBrush}"
+                                                BorderBrush="{StaticResource AppBorderBrush}"
+                                                BorderThickness="1" Padding="12,10" Margin="0,0,0,10"
+                                                CornerRadius="4">
+                                            <TextBlock Text="{Binding SelectedPeer.VerificationCode}"
+                                                       FontFamily="Consolas" FontSize="16" FontWeight="Bold"
+                                                       Foreground="{StaticResource AccentBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       TextAlignment="Center"/>
+                                        </Border>
+                                        <WrapPanel HorizontalAlignment="Center">
+                                            <Button Style="{StaticResource BtnSuccess}" Content="✔ Confirm"
+                                                    Margin="0,0,10,0" Padding="20,8"
+                                                    Click="OnConfirmVerification"/>
+                                            <Button Style="{StaticResource BtnDanger}" Content="✖ Reject"
+                                                    Padding="20,8"
+                                                    Click="OnRejectVerification"/>
+                                        </WrapPanel>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>
@@ -573,6 +594,58 @@
                                                  BorderThickness="1"
                                                  Tag="Enter filename to request…"/>
                                     </DockPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Peer's Available Files -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <DockPanel>
+                                            <Button Style="{StaticResource BtnSmall}"
+                                                    Content="↻ Refresh"
+                                                    DockPanel.Dock="Right"
+                                                    Click="OnFetchFileList"/>
+                                            <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       Text="📋  Peer's Files"
+                                                       VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding PeerFiles}" Margin="10,6">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource BgInputBrush}"
+                                                        BorderBrush="{StaticResource AppBorderBrush}"
+                                                        BorderThickness="1" CornerRadius="6"
+                                                        Padding="12,8" Margin="0,3">
+                                                    <DockPanel>
+                                                        <Button Style="{StaticResource BtnSmall}"
+                                                                Background="{StaticResource AccentBrush}"
+                                                                Foreground="White" Content="↓ Request"
+                                                                DockPanel.Dock="Right"
+                                                                Click="OnRequestPeerFile"
+                                                                Tag="{Binding Filename}"/>
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="12.5" FontWeight="Medium"
+                                                                       Text="{Binding Filename}"/>
+                                                            <TextBlock FontFamily="Consolas" FontSize="10.5"
+                                                                       Foreground="{StaticResource TextMutedBrush}">
+                                                                <Run Text="{Binding SizeDisplay, Mode=OneWay}"/>
+                                                                <Run Text=" · "/>
+                                                                <Run Text="{Binding HashShort, Mode=OneWay}"/>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Text="No files available. Click Refresh to fetch."
+                                               FontSize="11" FontStyle="Italic"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Margin="16,8,16,12"/>
                                 </StackPanel>
                             </Border>
 
@@ -618,6 +691,35 @@
                 </ScrollViewer>
             </Grid>
         </DockPanel>
+
+        <!-- ════════════════════════════════════════════════════
+             LAYER 1.5 — Notification banner
+             ════════════════════════════════════════════════════ -->
+        <Border Visibility="{Binding HasNotification, Converter={StaticResource BoolToVis}}"
+                Panel.ZIndex="150"
+                Background="{StaticResource WarningBrush}"
+                VerticalAlignment="Top" HorizontalAlignment="Stretch"
+                Padding="16,10" CornerRadius="0,0,8,8">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="12" ShadowDepth="3"
+                                  Opacity="0.25" Color="Black"/>
+            </Border.Effect>
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                    <Button Style="{StaticResource BtnSmall}"
+                            Background="White" Foreground="{StaticResource WarningBrush}"
+                            Content="Review" Margin="0,0,6,0"
+                            Click="OnNotificationReview"/>
+                    <Button Style="{StaticResource BtnSmall}"
+                            Background="Transparent" Foreground="White"
+                            BorderBrush="White" BorderThickness="1"
+                            Content="✕" Click="OnNotificationDismiss"/>
+                </StackPanel>
+                <TextBlock Text="{Binding NotificationMessage}"
+                           Foreground="White" FontSize="13" FontWeight="SemiBold"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+        </Border>
 
         <!-- ════════════════════════════════════════════════════
              LAYER 2 — Consent modal

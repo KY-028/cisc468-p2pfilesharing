@@ -128,11 +128,12 @@ namespace P2PFT_Cs.Utils
         /// Re-generates a fresh RSA-2048 key pair (key rotation) and saves the profile.
         /// Returns the new public key PEM for redistribution.
         /// </summary>
-        public string RotateKeys()
+        public string RotateKeys(out AsymmetricCipherKeyPair oldKeyPair)
         {
             if (Profile == null)
                 throw new InvalidOperationException("Profile not initialized. Call Initialize() first.");
 
+            oldKeyPair = RsaKeyPair;
             RsaKeyPair = GenerateRsaKeyPair();
 
             Profile.PrivateKeyPem = ExportPrivateKeyPem(RsaKeyPair);
@@ -355,10 +356,11 @@ namespace P2PFT_Cs.Utils
 
         private static string BytesToHex(byte[] data)
         {
-            var sb = new StringBuilder(data.Length * 2);
-            foreach (byte b in data)
+            var sb = new StringBuilder(data.Length * 3 - 1);
+            for (int i = 0; i < data.Length; i++)
             {
-                sb.Append(b.ToString("x2"));
+                if (i > 0) sb.Append(':');
+                sb.Append(data[i].ToString("x2"));
             }
             return sb.ToString();
         }

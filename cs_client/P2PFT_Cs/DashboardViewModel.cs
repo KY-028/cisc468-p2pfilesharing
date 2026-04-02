@@ -1,10 +1,14 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using P2PFT_Cs.Utils;
 
@@ -31,17 +35,23 @@ namespace P2PFT_Cs
         // ���� Peer detail ������������������������������������������������������������������������������������
         private PeerViewModel _selectedPeer;
         private bool _isPeerViewActive;
-        private bool _isVerifyInputVisible;
 
         // ���� Consent modal ��������������������������������������������������������������������������������
         private bool _isConsentModalOpen;
         private FileTransfer.ConsentRecord _activeConsent;
+
+        // Notification
+        private bool _hasNotification;
+        private string _notificationMessage;
+        private string _notificationRequestId;
+        private DispatcherTimer _notificationTimer;
 
         // ���� Engine ����������������������������������������������������������������������������������������������
         private FileTransfer _fileTransfer;
         private AccountManager _account;
         private PeerDiscovery _discovery;
         private PeerValidation _validation;
+        private ManifestStorage _manifests;
 
         // ���� Paths ������������������������������������������������������������������������������������������������
         private static readonly string SharedDir =
@@ -64,6 +74,8 @@ namespace P2PFT_Cs
             = new ObservableCollection<SharedFileViewModel>();
         public ObservableCollection<string> VaultFiles { get; }
             = new ObservableCollection<string>();
+        public ObservableCollection<PeerFileViewModel> PeerFiles { get; }
+            = new ObservableCollection<PeerFileViewModel>();
 
         // ���� Constructor ������������������������������������������������������������������������������������
 
@@ -135,7 +147,6 @@ namespace P2PFT_Cs
             {
                 _selectedPeer = value;
                 IsPeerViewActive = value != null;
-                IsVerifyInputVisible = false;
                 OnPropertyChanged();
                 RefreshPeerDetailLists();
             }
@@ -161,16 +172,8 @@ namespace P2PFT_Cs
             set { _activeConsent = value; OnPropertyChanged(); }
         }
 
-        public bool IsVerifyInputVisible
-        {
-            get { return _isVerifyInputVisible; }
-            set { _isVerifyInputVisible = value; OnPropertyChanged(); }
-        }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-        //  Vault
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+       //  Vault
         public void SetupVault(string password, string confirmPassword)
         {
             VaultError = null;
@@ -221,14 +224,22 @@ namespace P2PFT_Cs
         private void InitialiseEngine(string userId, string password)
         {
             _fileTransfer = new FileTransfer(userId, password, userId);
+            _fileTransfer.ConsentReceived += OnConsentReceived;
 
             _validation = new PeerValidation(userId, _account, _fileTransfer);
             _validation.PeerVerified += OnPeerVerified;
             _validation.PeerKeyRotated += OnPeerKeyRotated;
+            _validation.VerificationRequired += OnVerificationRequired;
 
             _discovery = new PeerDiscovery(userId, DefaultTcpPort, _fileTransfer, _validation);
             _discovery.PeerDiscovered += OnPeerDiscovered;
             _discovery.PeerOffline += OnPeerOffline;
+
+            string dataDir = AppDomain.CurrentDomain.BaseDirectory;
+            _manifests = new ManifestStorage(dataDir);
+            _discovery.SetManifestStorage(_manifests);
+            _discovery.SetSharedFilesCallback(GetSharedFileList);
+
             _discovery.Start();
 
             OnPropertyChanged(nameof(NetworkStatus));
@@ -311,6 +322,16 @@ namespace P2PFT_Cs
                 var existing = Peers.FirstOrDefault(p => p.PeerId == peerId);
                 if (existing != null) existing.Trusted = true;
             }));
+
+            // Auto-fetch file list after verification (like Python client)
+            if (_fileTransfer != null && _manifests != null)
+            {
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try { _fileTransfer.RequestFileListFromPeer(peerId, _manifests); }
+                    catch { }
+                });
+            }
         }
 
         private void OnPeerKeyRotated(string peerId)
@@ -325,6 +346,132 @@ namespace P2PFT_Cs
                     if (!string.IsNullOrEmpty(fp)) existing.Fingerprint = fp;
                 }
             }));
+        }
+
+        private void OnVerificationRequired(string peerId, string verificationCode)
+        {
+            Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+            {
+                var existing = Peers.FirstOrDefault(p => p.PeerId == peerId);
+                if (existing != null)
+                {
+                    existing.VerificationCode = verificationCode;
+                    string fp = _validation != null ? _validation.GetFingerprint(peerId) : null;
+                    if (!string.IsNullOrEmpty(fp)) existing.Fingerprint = fp;
+                }
+                ShowNotification("Peer " + peerId + " wants to pair — verify fingerprint", null);
+            }));
+        }
+
+        private void OnConsentReceived(FileTransfer.ConsentRecord consent)
+        {
+            Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+            {
+                // Immediately add to PendingConsents without waiting for poll
+                if (!PendingConsents.Any(c => c.RequestId == consent.RequestId))
+                {
+                    PendingConsents.Add(new ConsentViewModel
+                    {
+                        RequestId = consent.RequestId,
+                        PeerName = consent.PeerName,
+                        Action = consent.Action,
+                        Filename = consent.Filename,
+                        Timestamp = consent.Timestamp,
+                    });
+                }
+
+                string action = consent.Action == "file_send" ? "send you" : "request";
+                ShowNotification(consent.PeerName + " wants to " + action +
+                                 " \"" + consent.Filename + "\"", consent.RequestId);
+            }));
+        }
+
+        // ── Notification helpers ─────────────────────────────────
+
+        public bool HasNotification
+        {
+            get { return _hasNotification; }
+            set { _hasNotification = value; OnPropertyChanged(); }
+        }
+
+        public string NotificationMessage
+        {
+            get { return _notificationMessage; }
+            set { _notificationMessage = value; OnPropertyChanged(); }
+        }
+
+        public string NotificationRequestId
+        {
+            get { return _notificationRequestId; }
+            set { _notificationRequestId = value; OnPropertyChanged(); }
+        }
+
+        private void ShowNotification(string message, string requestId)
+        {
+            NotificationMessage = message;
+            NotificationRequestId = requestId;
+            HasNotification = true;
+
+            // Flash the taskbar
+            FlashTaskbar();
+
+            // Auto-dismiss after 10 seconds
+            if (_notificationTimer != null)
+                _notificationTimer.Stop();
+            _notificationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+            _notificationTimer.Tick += (s, e) =>
+            {
+                _notificationTimer.Stop();
+                HasNotification = false;
+            };
+            _notificationTimer.Start();
+        }
+
+        public void DismissNotification()
+        {
+            HasNotification = false;
+            if (_notificationTimer != null) _notificationTimer.Stop();
+        }
+
+        public void ReviewNotification()
+        {
+            if (!string.IsNullOrEmpty(NotificationRequestId))
+                ShowConsentModal(NotificationRequestId);
+            DismissNotification();
+        }
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool FlashWindowEx(ref FLASHWINFO pwfi);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct FLASHWINFO
+        {
+            public uint cbSize;
+            public IntPtr hwnd;
+            public uint dwFlags;
+            public uint uCount;
+            public uint dwTimeout;
+        }
+
+        private static void FlashTaskbar()
+        {
+            try
+            {
+                var mainWindow = Application.Current?.MainWindow;
+                if (mainWindow == null) return;
+                var helper = new WindowInteropHelper(mainWindow);
+                var info = new FLASHWINFO
+                {
+                    cbSize = (uint)Marshal.SizeOf(typeof(FLASHWINFO)),
+                    hwnd = helper.Handle,
+                    dwFlags = 0x03 | 0x0C, // FLASHW_ALL | FLASHW_TIMERNOFG
+                    uCount = 3,
+                    dwTimeout = 0,
+                };
+                FlashWindowEx(ref info);
+            }
+            catch { }
         }
 
         // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
@@ -400,6 +547,44 @@ namespace P2PFT_Cs
             RefreshFromEngine();
         }
 
+        public void FetchFileList(string peerId)
+        {
+            if (_fileTransfer == null || _manifests == null) return;
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    _fileTransfer.RequestFileListFromPeer(peerId, _manifests);
+                    Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+                    {
+                        RefreshPeerDetailLists();
+                    }));
+                }
+                catch { }
+            });
+        }
+
+        private List<DataObj.FileInfo> GetSharedFileList()
+        {
+            var result = new List<DataObj.FileInfo>();
+            string sharedDir = SharedDir;
+            if (!Directory.Exists(sharedDir)) return result;
+
+            foreach (string filePath in Directory.GetFiles(sharedDir))
+            {
+                byte[] data = File.ReadAllBytes(filePath);
+                string hash = TransmissionCrypto.ComputeSha256Hex(data);
+                result.Add(new DataObj.FileInfo
+                {
+                    Filename = Path.GetFileName(filePath),
+                    Size = data.LongLength,
+                    FileHash = hash,
+                    OwnerId = _peerId,
+                });
+            }
+            return result;
+        }
+
         public void SendFile(string peerId, string filename)
         {
             if (_fileTransfer == null) return;
@@ -414,26 +599,80 @@ namespace P2PFT_Cs
         //  Peer verification
         // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
 
-        public void VerifyPeerFingerprint(string claimedFingerprint)
+        /// <summary>
+        /// Initiates verification: generates the code on-demand if needed (like Python's /api/verify-peer).
+        /// </summary>
+        public void InitiateVerification()
         {
             if (_validation == null || SelectedPeer == null) return;
 
-            bool valid = _validation.VerifyFingerprint(
-                SelectedPeer.PeerId, claimedFingerprint);
+            // If code already shown, nothing to do
+            if (SelectedPeer.HasVerificationCode) return;
 
-            if (valid)
-            {
-                _validation.ConfirmTrust(SelectedPeer.PeerId);
-                SelectedPeer.Trusted = true;
-                IsVerifyInputVisible = false;
-            }
-            else
+            string myFp = _account?.GetFingerprint();
+            string theirFp = _validation.GetFingerprint(SelectedPeer.PeerId);
+
+            // If we don't have the peer's fingerprint yet, initiate a handshake
+            // (like Python's /api/verify-peer which handshakes on-demand)
+            if (string.IsNullOrEmpty(myFp))
             {
                 MessageBox.Show(
-                    "Fingerprint does not match the stored public key.\n" +
-                    "This peer cannot be verified.",
+                    "Local identity not available.",
                     "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
+
+            if (string.IsNullOrEmpty(theirFp))
+            {
+                // Trigger handshake — it will call RaiseVerificationIfNeeded on
+                // completion, which fires VerificationRequired and sets the code.
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    try
+                    {
+                        _validation.InitiateHandshake(
+                            SelectedPeer.PeerId, SelectedPeer.Address, SelectedPeer.Port);
+                    }
+                    catch (Exception ex)
+                    {
+                        Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
+                        {
+                            MessageBox.Show(
+                                "Handshake failed: " + ex.Message,
+                                "Verification Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }));
+                    }
+                });
+                return;
+            }
+
+            string code = PeerValidation.GenerateVerificationCode(myFp, theirFp);
+            SelectedPeer.VerificationCode = code;
+        }
+
+        /// <summary>
+        /// User confirmed the displayed code matches — send VERIFY_CONFIRM to peer.
+        /// </summary>
+        public void ConfirmPeerVerification()
+        {
+            if (_validation == null || SelectedPeer == null) return;
+            _validation.ConfirmVerification(
+                SelectedPeer.PeerId, SelectedPeer.Address, SelectedPeer.Port);
+            SelectedPeer.VerificationCode = null;
+        }
+
+        /// <summary>
+        /// User rejected the verification — send VERIFY_REJECT to peer.
+        /// </summary>
+        public void RejectPeerVerification()
+        {
+            if (_validation == null || SelectedPeer == null) return;
+            _validation.RejectVerification(
+                SelectedPeer.PeerId, SelectedPeer.Address, SelectedPeer.Port);
+            SelectedPeer.VerificationCode = null;
+            MessageBox.Show(
+                "Verification rejected.\nThe session with this peer has been destroyed.",
+                "Verification Rejected", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         public void RevokePeerTrust()
@@ -441,6 +680,52 @@ namespace P2PFT_Cs
             if (_validation == null || SelectedPeer == null) return;
             _validation.RevokeTrust(SelectedPeer.PeerId);
             SelectedPeer.Trusted = false;
+        }
+
+        public void RotateOwnKey()
+        {
+            if (_account == null || _validation == null || _fileTransfer == null) return;
+
+            try
+            {
+                // 1. Save old fingerprint before rotation
+                string oldFingerprint = _account.GetFingerprint();
+
+                // 2. Rotate keys — get old key pair for cross-signing
+                Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair oldKeyPair;
+                string newPubKeyPem = _account.RotateKeys(out oldKeyPair);
+
+                // 3. Cross-sign: sign the new public key PEM with the old private key
+                byte[] newPubKeyBytes = System.Text.Encoding.UTF8.GetBytes(newPubKeyPem);
+                string crossSignature = _validation.CrossSign(oldKeyPair.Private, newPubKeyBytes);
+
+                // 4. Clear all session keys (they were derived with old identity)
+                _fileTransfer.ClearAllSessionKeys();
+
+                // 5. Broadcast REVOKE_KEY to all online peers
+                var msg = new DataObj.RevokeKeyMessage(new DataObj.RevokeKeyPayload
+                {
+                    PeerId = _peerId,
+                    NewPublicKey = newPubKeyPem,
+                    CrossSignature = crossSignature,
+                    OldFingerprint = oldFingerprint,
+                    Reason = "key_rotation",
+                });
+                _fileTransfer.BroadcastToAllPeers(msg);
+
+                // 6. Update local UI state
+                Fingerprint = _account.GetFingerprint();
+                OnPropertyChanged(nameof(Fingerprint));
+
+                // 7. Mark all peers as untrusted (they need to re-verify)
+                foreach (var peer in Peers)
+                    peer.Trusted = false;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Key rotation failed: " + ex.Message,
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
@@ -572,6 +857,21 @@ namespace P2PFT_Cs
             SendableFiles.Clear();
             foreach (var f in SharedFiles)
                 SendableFiles.Add(f);
+
+            PeerFiles.Clear();
+            if (_manifests != null)
+            {
+                var files = _manifests.Get(SelectedPeer.PeerId);
+                foreach (var f in files)
+                {
+                    PeerFiles.Add(new PeerFileViewModel
+                    {
+                        Filename = f.Filename,
+                        Size = f.Size,
+                        Sha256Hash = f.FileHash ?? "",
+                    });
+                }
+            }
         }
 
         // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
@@ -620,6 +920,7 @@ namespace P2PFT_Cs
         private bool _trusted;
         private bool _online;
         private string _fingerprint = "unknown";
+        private string _verificationCode;
 
         public string PeerId { get; set; }
         public string DisplayName { get; set; }
@@ -652,6 +953,17 @@ namespace P2PFT_Cs
         {
             get { return _fingerprint; }
             set { _fingerprint = value; Notify(); }
+        }
+
+        public string VerificationCode
+        {
+            get { return _verificationCode; }
+            set { _verificationCode = value; Notify(); Notify("HasVerificationCode"); }
+        }
+
+        public bool HasVerificationCode
+        {
+            get { return !string.IsNullOrEmpty(_verificationCode); }
         }
 
         public string StatusClass
@@ -756,5 +1068,34 @@ namespace P2PFT_Cs
         public string Error { get; set; }
         public double Timestamp { get; set; }
         public string DirectionIcon { get { return Direction == "incoming" ? "??" : "??"; } }
+    }
+
+    internal class PeerFileViewModel
+    {
+        public string Filename { get; set; }
+        public long Size { get; set; }
+        public string Sha256Hash { get; set; }
+
+        public string SizeDisplay
+        {
+            get
+            {
+                if (Size == 0) return "0 B";
+                string[] units = { "B", "KB", "MB", "GB" };
+                int idx = (int)Math.Floor(Math.Log(Size, 1024));
+                if (idx >= units.Length) idx = units.Length - 1;
+                return (Size / Math.Pow(1024, idx)).ToString("F1") + " " + units[idx];
+            }
+        }
+
+        public string HashShort
+        {
+            get
+            {
+                if (Sha256Hash != null && Sha256Hash.Length > 12)
+                    return Sha256Hash.Substring(0, 12) + "…";
+                return Sha256Hash ?? "";
+            }
+        }
     }
 }

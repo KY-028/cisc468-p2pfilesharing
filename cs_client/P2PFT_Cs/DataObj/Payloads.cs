@@ -1,9 +1,9 @@
-using System.Collections.Generic;
+ï»¿using System.Collections.Generic;
 using System.Runtime.Serialization;
 
 namespace P2PFT_Cs.DataObj
 {
-    // ©¤©¤ Base Payload (shared peer_id across all messages) ©¤©¤©¤©¤©¤©¤©¤
+    // ï¿½ï¿½ï¿½ï¿½ Base Payload (shared peer_id across all messages) ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
     [DataContract]
     internal abstract class BasePayload
@@ -12,13 +12,19 @@ namespace P2PFT_Cs.DataObj
         public string PeerId { get; set; }
     }
 
-    // ©¤©¤ Peer Discovery ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+    // ï¿½ï¿½ï¿½ï¿½ Peer Discovery ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
     [DataContract]
     internal class PeerAnnouncePayload : BasePayload
     {
         [DataMember(Name = "port", IsRequired = true)]
         public int Port { get; set; }
+
+        [DataMember(Name = "public_key", IsRequired = false)]
+        public string PublicKey { get; set; }
+
+        [DataMember(Name = "display_name", IsRequired = false)]
+        public string DisplayName { get; set; }
     }
 
     [DataContract]
@@ -46,7 +52,7 @@ namespace P2PFT_Cs.DataObj
         public List<PeerInfo> Peers { get; set; }
     }
 
-    // ©¤©¤ Key Exchange ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+    // ï¿½ï¿½ï¿½ï¿½ Key Exchange ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
     [DataContract]
     internal class KeyExchangeInitPayload : BasePayload
@@ -78,7 +84,7 @@ namespace P2PFT_Cs.DataObj
         public string Signature { get; set; }
     }
 
-    // ©¤©¤ File Operations ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+    // ï¿½ï¿½ï¿½ï¿½ File Operations ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
     [DataContract]
     internal class FileListRequestPayload : BasePayload
@@ -91,11 +97,17 @@ namespace P2PFT_Cs.DataObj
         [DataMember(Name = "filename")]
         public string Filename { get; set; }
 
-        [DataMember(Name = "file_hash")]
+        [DataMember(Name = "sha256_hash")]
         public string FileHash { get; set; }
 
         [DataMember(Name = "size")]
         public long Size { get; set; }
+
+        [DataMember(Name = "owner_id", IsRequired = false)]
+        public string OwnerId { get; set; }
+
+        [DataMember(Name = "signature", IsRequired = false)]
+        public string Signature { get; set; }
     }
 
     [DataContract]
@@ -129,9 +141,15 @@ namespace P2PFT_Cs.DataObj
         /// </summary>
         [DataMember(Name = "data", IsRequired = true)]
         public string Data { get; set; }
+
+        [DataMember(Name = "signature", IsRequired = false)]
+        public string Signature { get; set; }
+
+        [DataMember(Name = "hmac", IsRequired = false)]
+        public string Hmac { get; set; }
     }
 
-    // ©¤©¤ Consent ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+    // ï¿½ï¿½ï¿½ï¿½ Consent ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
     [DataContract]
     internal class ConsentRequestPayload : BasePayload
@@ -141,6 +159,9 @@ namespace P2PFT_Cs.DataObj
 
         [DataMember(Name = "filename", IsRequired = true)]
         public string Filename { get; set; }
+
+        [DataMember(Name = "file_hash", IsRequired = false)]
+        public string FileHash { get; set; }
     }
 
     [DataContract]
@@ -153,22 +174,44 @@ namespace P2PFT_Cs.DataObj
         public bool Approved { get; set; }
     }
 
-    // ©¤©¤ Key Revocation ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+    // ï¿½ï¿½ï¿½ï¿½ Key Revocation ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
     [DataContract]
     internal class RevokeKeyPayload : BasePayload
     {
         [DataMember(Name = "new_public_key", IsRequired = true)]
         public string NewPublicKey { get; set; }
+
+        [DataMember(Name = "cross_signature", IsRequired = false)]
+        public string CrossSignature { get; set; }
+
+        [DataMember(Name = "old_fingerprint", IsRequired = false)]
+        public string OldFingerprint { get; set; }
+
+        [DataMember(Name = "reason", IsRequired = false)]
+        public string Reason { get; set; }
     }
 
-    // ©¤©¤ Error ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+    // Verification
+
+    [DataContract]
+    internal class VerifyConfirmPayload : BasePayload
+    {
+    }
+
+    [DataContract]
+    internal class VerifyRejectPayload : BasePayload
+    {
+    }
+
+
+    // ï¿½ï¿½ï¿½ï¿½ Error ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
     [DataContract]
     internal class ErrorPayload : BasePayload
     {
         [DataMember(Name = "code", IsRequired = true)]
-        public int Code { get; set; }
+        public string Code { get; set; }
 
         [DataMember(Name = "description", IsRequired = true)]
         public string Description { get; set; }

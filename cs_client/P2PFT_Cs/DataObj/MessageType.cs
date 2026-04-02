@@ -15,6 +15,8 @@ namespace P2PFT_Cs.DataObj
         public const string ConsentRequest      = "CONSENT_REQUEST";
         public const string ConsentResponse     = "CONSENT_RESPONSE";
         public const string RevokeKey           = "REVOKE_KEY";
+        public const string VerifyConfirm       = "VERIFY_CONFIRM";
+        public const string VerifyReject        = "VERIFY_REJECT";
         public const string Error               = "ERROR";
     }
 }

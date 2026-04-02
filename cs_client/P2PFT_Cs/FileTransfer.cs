@@ -78,6 +78,12 @@ namespace P2PFT_Cs
         private readonly List<StatusEntry> _statusLog = new List<StatusEntry>();
         private readonly object _statusLock = new object();
 
+        /// <summary>
+        /// Raised immediately when a new consent request is received
+        /// (file_request or file_send). Passes the ConsentRecord.
+        /// </summary>
+        public event Action<ConsentRecord> ConsentReceived;
+
         // ── Constructor ──────────────────────────────────────────────
 
         /// <param name="peerId">This peer's unique identifier.</param>
@@ -121,6 +127,157 @@ namespace P2PFT_Cs
                 throw new ArgumentException("Session key must be exactly 32 bytes.", nameof(sessionKey));
 
             _sessionKeys[peerId] = sessionKey;
+        }
+
+        // ================================================================
+        //  File list exchange
+        // ================================================================
+
+        /// <summary>
+        /// Opens a TCP connection to a peer, sends FILE_LIST_REQUEST,
+        /// and reads the FILE_LIST_RESPONSE on the same socket (matching
+        /// Python's request_file_list_from_peer flow).
+        /// </summary>
+        public void RequestFileListFromPeer(string peerId, ManifestStorage manifests)
+        {
+            PeerEndpoint peer;
+            if (!_peers.TryGetValue(peerId, out peer) || !peer.Online)
+            {
+                AddStatus("Cannot fetch file list: peer " + peerId + " is not online.", "warning");
+                return;
+            }
+
+            try
+            {
+                var msg = new FileListRequestMessage(new FileListRequestPayload
+                {
+                    PeerId = _peerId,
+                });
+
+                var serializer = new DataContractJsonSerializer(typeof(FileListRequestMessage));
+                byte[] payload;
+                using (var ms = new MemoryStream())
+                {
+                    serializer.WriteObject(ms, msg);
+                    payload = ms.ToArray();
+                }
+
+                byte[] header = BitConverter.GetBytes(payload.Length);
+                if (BitConverter.IsLittleEndian) Array.Reverse(header);
+
+                using (var client = new TcpClient())
+                {
+                    client.Connect(peer.Address, peer.Port);
+                    client.SendTimeout = DefaultTimeout;
+                    client.ReceiveTimeout = DefaultTimeout;
+                    NetworkStream stream = client.GetStream();
+
+                    // Send request
+                    stream.Write(header, 0, header.Length);
+                    stream.Write(payload, 0, payload.Length);
+                    stream.Flush();
+
+                    // Read response on same socket
+                    byte[] respHeader = ReadExactly(stream, HeaderSize);
+                    if (respHeader == null) { AddStatus("File list: no response from " + peerId, "warning"); return; }
+                    int respLen = FromBigEndian(respHeader, 0);
+                    if (respLen <= 0 || respLen > MaxMessageSize) { AddStatus("File list: invalid response size from " + peerId, "warning"); return; }
+
+                    byte[] respPayload = ReadExactly(stream, respLen);
+                    if (respPayload == null) { AddStatus("File list: incomplete response from " + peerId, "warning"); return; }
+
+                    var respSerializer = new DataContractJsonSerializer(typeof(FileListResponseMessage));
+                    using (var rms = new MemoryStream(respPayload))
+                    {
+                        var respMsg = (FileListResponseMessage)respSerializer.ReadObject(rms);
+                        if (respMsg != null && respMsg.Payload != null && respMsg.Payload.Files != null)
+                        {
+                            manifests.Store(peerId, respMsg.Payload.Files);
+                            AddStatus("Received file list from " + peerId + " (" + respMsg.Payload.Files.Count + " files)", "info");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AddStatus("Failed to fetch file list from " + peerId + ": " + ex.Message, "error");
+            }
+        }
+
+        /// <summary>
+        /// Handles an incoming FILE_LIST_REQUEST by responding with our
+        /// shared file list on the same TCP socket.
+        /// </summary>
+        public void HandleFileListRequest(FileListRequestPayload request,
+                                          NetworkStream stream,
+                                          Func<List<DataObj.FileInfo>> getSharedFiles)
+        {
+            try
+            {
+                var files = getSharedFiles();
+                var resp = new FileListResponseMessage(new FileListResponsePayload
+                {
+                    PeerId = _peerId,
+                    Files = files,
+                });
+
+                var serializer = new DataContractJsonSerializer(typeof(FileListResponseMessage));
+                byte[] payload;
+                using (var ms = new MemoryStream())
+                {
+                    serializer.WriteObject(ms, resp);
+                    payload = ms.ToArray();
+                }
+
+                byte[] header = BitConverter.GetBytes(payload.Length);
+                if (BitConverter.IsLittleEndian) Array.Reverse(header);
+
+                stream.Write(header, 0, header.Length);
+                stream.Write(payload, 0, payload.Length);
+                stream.Flush();
+
+                AddStatus("Sent file list to " + request.PeerId, "info");
+            }
+            catch (Exception ex)
+            {
+                AddStatus("Failed to send file list: " + ex.Message, "error");
+            }
+        }
+
+        /// <summary>
+        /// Handles an incoming FILE_LIST_RESPONSE (dispatched from
+        /// PeerDiscovery when received as a standalone message).
+        /// </summary>
+        public void HandleFileListResponse(FileListResponsePayload response,
+                                           ManifestStorage manifests)
+        {
+            if (response.Files == null) return;
+            manifests.Store(response.PeerId, response.Files);
+            AddStatus("Received file list from " + response.PeerId +
+                      " (" + response.Files.Count + " files)", "info");
+        }
+
+        // ── File list helpers ────────────────────────────────────────
+
+        private static byte[] ReadExactly(NetworkStream stream, int count)
+        {
+            byte[] buffer = new byte[count];
+            int offset = 0;
+            while (offset < count)
+            {
+                int read = stream.Read(buffer, offset, count - offset);
+                if (read == 0) return null;
+                offset += read;
+            }
+            return buffer;
+        }
+
+        private static int FromBigEndian(byte[] data, int offset)
+        {
+            byte[] buf = new byte[4];
+            Buffer.BlockCopy(data, offset, buf, 0, 4);
+            if (BitConverter.IsLittleEndian) Array.Reverse(buf);
+            return BitConverter.ToInt32(buf, 0);
         }
 
         // ================================================================
@@ -321,7 +478,7 @@ namespace P2PFT_Cs
                     var err = new ErrorMessage(new ErrorPayload
                     {
                         PeerId = _peerId,
-                        Code = 404,
+                        Code = "FILE_NOT_FOUND",
                         Description = "File '" + filename + "' not found in shared files",
                     });
                     SendToPeer(senderAddress, senderPort, err);
@@ -364,6 +521,7 @@ namespace P2PFT_Cs
             };
 
             AddStatus("Peer " + peerName + " wants '" + filename + "' — awaiting your consent", "warning");
+            ConsentReceived?.Invoke(_pendingConsents[requestId]);
         }
 
         /// <summary>
@@ -478,6 +636,7 @@ namespace P2PFT_Cs
 
             AddStatus("Peer " + peerName + " wants to " +
                       action.Replace("_", " ") + " '" + filename + "'", "warning");
+            ConsentReceived?.Invoke(_pendingConsents[requestId]);
         }
 
         /// <summary>
@@ -845,6 +1004,33 @@ namespace P2PFT_Cs
                     stream.Flush();
                 }
             }
+        }
+
+        // ── Broadcast ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// Sends a message to all online peers (used for REVOKE_KEY broadcast).
+        /// </summary>
+        public void BroadcastToAllPeers<TPayload>(jsonBody<TPayload> message)
+            where TPayload : BasePayload
+        {
+            foreach (var kvp in _peers)
+            {
+                if (kvp.Key == _peerId || !kvp.Value.Online) continue;
+                try
+                {
+                    SendToPeer(kvp.Value.Address, kvp.Value.Port, message);
+                }
+                catch { /* best-effort broadcast */ }
+            }
+        }
+
+        /// <summary>
+        /// Clears all session keys (used after key rotation).
+        /// </summary>
+        public void ClearAllSessionKeys()
+        {
+            _sessionKeys.Clear();
         }
 
         // ── Helpers ──────────────────────────────────────────────────

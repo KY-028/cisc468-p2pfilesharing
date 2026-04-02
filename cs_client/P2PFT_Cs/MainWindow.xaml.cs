@@ -121,6 +121,18 @@ namespace P2PFT_Cs
             _vm.ActiveConsent = null;
         }
 
+        // ── Notification banner ──────────────────────────────────
+
+        private void OnNotificationReview(object sender, RoutedEventArgs e)
+        {
+            _vm.ReviewNotification();
+        }
+
+        private void OnNotificationDismiss(object sender, RoutedEventArgs e)
+        {
+            _vm.DismissNotification();
+        }
+
         // ── Peer detail ──────────────────────────────────────────
 
         private void OnBackHome(object sender, RoutedEventArgs e)
@@ -132,14 +144,17 @@ namespace P2PFT_Cs
 
         private void OnVerifyPeer(object sender, RoutedEventArgs e)
         {
-            _vm.IsVerifyInputVisible = true;
+            _vm.InitiateVerification();
         }
 
-        private void OnConfirmFingerprint(object sender, RoutedEventArgs e)
+        private void OnConfirmVerification(object sender, RoutedEventArgs e)
         {
-            string inputFingerprint = FingerprintInput.Text.Trim();
-            _vm.VerifyPeerFingerprint(inputFingerprint);
-            FingerprintInput.Text = "";
+            _vm.ConfirmPeerVerification();
+        }
+
+        private void OnRejectVerification(object sender, RoutedEventArgs e)
+        {
+            _vm.RejectPeerVerification();
         }
 
         private void OnRevokeTrust(object sender, RoutedEventArgs e)
@@ -174,6 +189,22 @@ namespace P2PFT_Cs
                 _vm.SendFile(_vm.SelectedPeer.PeerId, filename);
         }
 
+        // ── Fetch file list ───────────────────────────────────────
+
+        private void OnFetchFileList(object sender, RoutedEventArgs e)
+        {
+            if (_vm.SelectedPeer == null) return;
+            _vm.FetchFileList(_vm.SelectedPeer.PeerId);
+        }
+
+        private void OnRequestPeerFile(object sender, RoutedEventArgs e)
+        {
+            if (_vm.SelectedPeer == null) return;
+            var el = sender as FrameworkElement;
+            if (el != null && el.Tag is string filename)
+                _vm.RequestFile(_vm.SelectedPeer.PeerId, filename);
+        }
+
         // ── Vault download ───────────────────────────────────────
 
         private void OnDownloadVaultFile(object sender, RoutedEventArgs e)
@@ -201,6 +232,22 @@ namespace P2PFT_Cs
                 MessageBox.Show("Failed to decrypt file: " + ex.Message,
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        // ── Own key rotation ─────────────────────────────────────
+
+        private void OnRotateOwnKey(object sender, RoutedEventArgs e)
+        {
+            var result = MessageBox.Show(
+                "This will generate a new RSA-2048 key pair.\n\n" +
+                "• Your old private key will be permanently destroyed.\n" +
+                "• A REVOKE_KEY message will be sent to all verified peers.\n" +
+                "• All peers will need to re-verify before transferring files.\n\n" +
+                "Continue?",
+                "Rotate Key Pair", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.Yes)
+                _vm.RotateOwnKey();
         }
 
         // ── Window closing → stop discovery ──────────────────────
