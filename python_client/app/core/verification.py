@@ -18,16 +18,28 @@ convenience functions and a route for on-demand verification.
 Reading order: Read files.py and manifests.py first, then this file.
 """
 
-import base64
+import hashlib
 import logging
 from typing import Optional
-from app.core.state import app_state, PeerInfo
-from app.crypto.sign import verify_signature
-from app.crypto.keys import deserialize_public_key
+from app.core.state import app_state
 from app.crypto.hashing import sha256_hash
 from app.storage.manifests import get_manifest, verify_file_signature
 
 logger = logging.getLogger(__name__)
+
+
+def generate_verification_code(fingerprint_a: str, fingerprint_b: str) -> Optional[str]:
+    """Generate a stable, order-independent human-readable verification code."""
+    if not fingerprint_a or not fingerprint_b:
+        return None
+    if fingerprint_a == "unknown" or fingerprint_b == "unknown":
+        return None
+
+    combined = "\n".join(sorted([fingerprint_a, fingerprint_b]))
+    code_hash = hashlib.sha256(combined.encode()).hexdigest()
+    code_int = int(code_hash[:24], 16)  # 96 bits for a 30-digit display code
+    code_digits = str(code_int).zfill(30)[:30]
+    return " ".join(code_digits[i:i + 5] for i in range(0, 30, 5))
 
 
 def verify_received_file(file_data: bytes, expected_hash: str,

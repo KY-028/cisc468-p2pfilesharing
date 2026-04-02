@@ -124,6 +124,32 @@ class PeerDiscovery:
                 return
             address = addresses[0]  # Use the first address
 
+            # Deduplicate stale identities advertising the same endpoint.
+            # One address:port should map to one peer identity.
+            duplicates_removed = []
+            for existing_peer_id, existing_peer in list(app_state.peers.items()):
+                if existing_peer_id == peer_id:
+                    continue
+                if existing_peer.address == address and existing_peer.port == info.port:
+                    from app.storage.manifests import clear_manifest
+                    clear_manifest(existing_peer_id)
+                    app_state.pending_verifications = [
+                        pv for pv in app_state.pending_verifications
+                        if pv.get("peer_id") != existing_peer_id
+                    ]
+                    app_state.verify_confirmed_by_me.discard(existing_peer_id)
+                    app_state.verify_confirmed_by_peer.discard(existing_peer_id)
+                    app_state.peers.pop(existing_peer_id, None)
+                    duplicates_removed.append(existing_peer_id)
+
+            if duplicates_removed:
+                app_state.save_trusted_peers()
+                app_state.add_status(
+                    f"Deduplicated stale peer IDs on {address}:{info.port}: "
+                    f"removed {len(duplicates_removed)} duplicate(s).",
+                    level="warning"
+                )
+
             # Preserve trusted status if peer was previously known
             existing = app_state.peers.get(peer_id)
             trusted = existing.trusted if existing else False

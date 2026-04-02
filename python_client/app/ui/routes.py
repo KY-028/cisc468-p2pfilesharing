@@ -15,7 +15,7 @@ import os
 import io
 from flask import (
     Blueprint, render_template, request, jsonify,
-    redirect, url_for, send_file,
+    redirect, url_for, send_file as flask_send_file,
 )
 from app.core.state import app_state
 from app.storage.files import (
@@ -23,9 +23,10 @@ from app.storage.files import (
     get_file_list_for_network, get_file_by_hash, get_file_by_name,
 )
 from app.storage.manifests import get_manifest, get_all_manifests
+from app.core.verification import generate_verification_code
 from app.storage.vault import (
     is_vault_initialized, initialize_vault, unlock_vault,
-    get_vault_key, vault_list_files, vault_retrieve_file,
+    get_vault_key, vault_list_files, vault_retrieve_file, change_vault_password,
 )
 
 import logging
@@ -128,6 +129,48 @@ def vault_unlock():
     return redirect(url_for("ui.dashboard"))
 
 
+@ui_blueprint.route("/api/vault/change-password", methods=["POST"])
+def vault_change_password():
+    """Change vault password and re-encrypt vault files with a new key."""
+    from cryptography.exceptions import InvalidTag
+
+    old_password = request.form.get("old_password", "")
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    if not old_password or not new_password or not confirm_password:
+        return jsonify({"ok": False, "error": "All password fields are required."}), 400
+
+    if len(new_password) < 8:
+        return jsonify({"ok": False, "error": "New password must be at least 8 characters."}), 400
+
+    if new_password != confirm_password:
+        return jsonify({"ok": False, "error": "New passwords do not match."}), 400
+
+    if old_password == new_password:
+        return jsonify({"ok": False, "error": "New password must be different from the current password."}), 400
+
+    try:
+        change_vault_password(old_password, new_password)
+    except InvalidTag:
+        app_state.add_status("Vault key change failed: incorrect current password.", level="error")
+        return jsonify({"ok": False, "error": "Current password is incorrect."}), 403
+    except FileNotFoundError:
+        app_state.add_status("Vault key change failed: vault is not initialized.", level="error")
+        return jsonify({"ok": False, "error": "Vault is not initialized."}), 400
+    except RuntimeError as exc:
+        logger.error(f"Vault key change failed: {exc}")
+        app_state.add_status("Vault key change failed and was rolled back.", level="error")
+        return jsonify({"ok": False, "error": "Vault re-encryption failed; previous key restored."}), 500
+    except Exception as exc:
+        logger.error(f"Vault key change unexpected error: {exc}")
+        app_state.add_status("Vault key change failed due to an unexpected error.", level="error")
+        return jsonify({"ok": False, "error": "Unexpected error while changing vault key."}), 500
+
+    app_state.add_status("Vault key updated successfully.", level="success")
+    return jsonify({"ok": True})
+
+
 # ---------------------------------------------------------------------------
 # Vault file management API
 # ---------------------------------------------------------------------------
@@ -154,7 +197,7 @@ def vault_download(filename):
         }), 400
     if data is None:
         return jsonify({"ok": False, "error": "File not found in vault"}), 404
-    return send_file(
+    return flask_send_file(
         io.BytesIO(data),
         download_name=filename,
         as_attachment=True,
@@ -302,7 +345,7 @@ def request_file_list():
 
 
 @ui_blueprint.route("/api/send-file", methods=["POST"])
-def send_file():
+def send_file_to_peer_route():
     """Send a consent request to the receiving peer before sending a file."""
     from app.core.consent import send_consent_offer
     peer_id = request.form.get("peer_id", "").strip()
@@ -426,8 +469,6 @@ def verify_peer_route():
     out-of-band (in person, phone, etc.) and then confirm.
     """
     from app.core.sessions import initiate_handshake, get_session_key
-    import hashlib
-
     peer_id = request.form.get("peer_id", "").strip()
     if not peer_id:
         return jsonify({"ok": False, "error": "peer_id required"}), 400
@@ -458,14 +499,9 @@ def verify_peer_route():
     if not their_fp or their_fp == "unknown":
         return jsonify({"ok": False, "error": "Peer fingerprint not available. Handshake may have failed."}), 500
 
-    combined = "\n".join(sorted([my_fp, their_fp]))
-    code_hash = hashlib.sha256(combined.encode()).hexdigest()
-    # Format as 6 groups of 5 digits (30 digits total) for easy reading
-    code_int = int(code_hash[:24], 16)  # Use first 24 hex chars = 96 bits
-    code_digits = str(code_int).zfill(30)[:30]
-    verification_code = " ".join(
-        code_digits[i:i+5] for i in range(0, 30, 5)
-    )
+    verification_code = generate_verification_code(my_fp, their_fp)
+    if not verification_code:
+        return jsonify({"ok": False, "error": "Verification code generation failed."}), 500
 
     app_state.add_status(
         f"Verification code generated for {peer_id}. "

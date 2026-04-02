@@ -16,6 +16,7 @@ Run:  pytest app/tests/test_vault.py -v
 """
 
 import os
+import json
 import pytest
 from cryptography.exceptions import InvalidTag
 from app.crypto.kdf import pbkdf2_derive_key, generate_salt
@@ -27,6 +28,7 @@ from app.storage.vault import (
     vault_list_files, vault_delete_file,
     save_trust_records, load_trust_records,
     initialize_vault, unlock_vault, is_vault_initialized,
+    change_vault_password,
     set_vault_key, get_vault_key, lock_vault,
     vault_record_received_file, vault_lookup_by_hash,
     get_vault_dir, SALT_SIZE, NONCE_SIZE, TAG_SIZE,
@@ -182,12 +184,12 @@ class TestVaultInitialization:
         assert key1 == key2
         assert get_vault_key() is not None
 
-    def test_unlock_with_wrong_password_derives_different_key(self):
-        """Wrong password derives a different key (decryption will fail later)."""
-        key1 = initialize_vault("correct-password")
+    def test_unlock_with_wrong_password_raises(self):
+        """Wrong password should raise InvalidTag (verification token check)."""
+        initialize_vault("correct-password")
         lock_vault()
-        key2 = unlock_vault("wrong-password")
-        assert key1 != key2
+        with pytest.raises(InvalidTag):
+            unlock_vault("wrong-password")
 
     def test_unlock_without_init_raises(self):
         """unlock_vault should raise if vault_config.json doesn't exist."""
@@ -199,6 +201,137 @@ class TestVaultInitialization:
         assert get_vault_key() is not None
         lock_vault()
         assert get_vault_key() is None
+
+    def test_config_never_stores_password_or_key(self):
+        """vault_config.json must contain ONLY salt and verify_token.
+
+        The password and derived key must NEVER be written to disk.
+        This is a critical security requirement (Requirement #9).
+        """
+        import json as _json
+        password = "my-super-secret-password"
+        key = initialize_vault(password)
+        config_path = os.path.join(self.vault_dir, "vault_config.json")
+        with open(config_path, "r") as f:
+            config = _json.load(f)
+
+        # Only these fields should be present
+        assert set(config.keys()) == {"salt", "verify_token"}
+
+        # The raw password must not appear anywhere in the config
+        config_raw = open(config_path).read()
+        assert password not in config_raw
+
+        # The derived key (hex) must not appear in the config
+        assert key.hex() not in config_raw
+
+        # Salt should be a valid 16-byte hex string
+        salt_bytes = bytes.fromhex(config["salt"])
+        assert len(salt_bytes) == 16
+
+        # Verify token should be a valid encrypted blob
+        verify_bytes = bytes.fromhex(config["verify_token"])
+        assert len(verify_bytes) >= NONCE_SIZE + TAG_SIZE
+
+
+class TestVaultPasswordChange:
+    """Test vault password change and full-file re-encryption."""
+
+    def _set_temp_vault_dir(self, monkeypatch, tmp_path):
+        temp_vault_dir = tmp_path / "vault"
+        monkeypatch.setattr("app.storage.vault.VAULT_DIR", str(temp_vault_dir))
+        os.makedirs(temp_vault_dir, exist_ok=True)
+        lock_vault()
+        return str(temp_vault_dir)
+
+    def test_change_password_reencrypts_files_and_relocks_with_new_password(self, monkeypatch, tmp_path):
+        vault_dir = self._set_temp_vault_dir(monkeypatch, tmp_path)
+        initialize_vault("old-password-123")
+        vault_store_file("test_rekey.txt", b"sensitive payload")
+
+        vault_path = os.path.join(vault_dir, "test_rekey.txt.vault")
+        with open(vault_path, "rb") as f:
+            old_blob = f.read()
+
+        change_vault_password("old-password-123", "new-password-456")
+
+        with open(vault_path, "rb") as f:
+            new_blob = f.read()
+        assert new_blob != old_blob
+
+        lock_vault()
+        with pytest.raises(InvalidTag):
+            unlock_vault("old-password-123")
+
+        unlock_vault("new-password-456")
+        assert vault_retrieve_file("test_rekey.txt") == b"sensitive payload"
+
+    def test_change_password_rejects_wrong_old_password(self, monkeypatch, tmp_path):
+        self._set_temp_vault_dir(monkeypatch, tmp_path)
+        initialize_vault("correct-password")
+        vault_store_file("test_rekey_wrong_old.txt", b"abc")
+
+        with pytest.raises(InvalidTag):
+            change_vault_password("wrong-password", "new-password-789")
+
+    def test_change_password_rolls_back_on_reencrypt_failure(self, monkeypatch, tmp_path):
+        vault_dir = self._set_temp_vault_dir(monkeypatch, tmp_path)
+        initialize_vault("rollback-old-password")
+        vault_store_file("test_rekey_rollback.txt", b"rollback payload")
+
+        config_path = os.path.join(vault_dir, "vault_config.json")
+        with open(config_path, "r", encoding="utf-8") as f:
+            old_config = json.load(f)
+
+        vault_path = os.path.join(vault_dir, "test_rekey_rollback.txt.vault")
+        with open(vault_path, "rb") as f:
+            old_blob = f.read()
+
+        call_count = {"n": 0}
+        original_encrypt = vault_encrypt_data
+
+        def fail_on_file_encrypt(key, plaintext):
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                raise RuntimeError("forced encryption failure")
+            return original_encrypt(key, plaintext)
+
+        monkeypatch.setattr("app.storage.vault.vault_encrypt_data", fail_on_file_encrypt)
+
+        with pytest.raises(RuntimeError, match="Vault key change failed"):
+            change_vault_password("rollback-old-password", "rollback-new-password")
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            restored_config = json.load(f)
+        with open(vault_path, "rb") as f:
+            restored_blob = f.read()
+
+        assert restored_config == old_config
+        assert restored_blob == old_blob
+
+        lock_vault()
+        unlock_vault("rollback-old-password")
+        assert vault_retrieve_file("test_rekey_rollback.txt") == b"rollback payload"
+
+    def test_change_password_corrupt_existing_blob_raises_runtime_error(self, monkeypatch, tmp_path):
+        self._set_temp_vault_dir(monkeypatch, tmp_path)
+        initialize_vault("correct-old-password")
+        vault_store_file("test_rekey_corrupt.txt", b"payload")
+
+        call_count = {"n": 0}
+        original_decrypt = vault_decrypt_data
+
+        def fail_only_on_file_decrypt(key, blob):
+            call_count["n"] += 1
+            # First decrypt is verify_token; second is first vault file blob.
+            if call_count["n"] == 2:
+                raise InvalidTag()
+            return original_decrypt(key, blob)
+
+        monkeypatch.setattr("app.storage.vault.vault_decrypt_data", fail_only_on_file_decrypt)
+
+        with pytest.raises(RuntimeError, match="corrupt or undecryptable"):
+            change_vault_password("correct-old-password", "new-password-111")
 
 
 # ===================================================================

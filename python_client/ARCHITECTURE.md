@@ -36,7 +36,7 @@ python_client/
     │   └── encrypt.py        # AES-256-GCM AEAD
     │
     ├── network/              # Networking (I/O layer)
-    │   ├── messages.py       # Message builder functions (14 types)
+    │   ├── messages.py       # Message builder functions (runtime message set)
     │   ├── transport.py      # TCP server + length-prefixed wire format
     │   └── discovery.py      # mDNS peer discovery (zeroconf)
     │
@@ -69,187 +69,145 @@ python_client/
 
 ### 2.1 `core/` — Application Logic
 
-| Module | Purpose |
-|--------|---------|
-| **state.py** | Singleton `AppState` holding all runtime data: peers, shared files, transfers, consents, status log. Every other module reads/writes through this. |
-| **protocol.py** | Single source of truth for the wire format. Defines 14 message types, payload schemas, JSON serialization, base64 encoding for binary fields. |
-| **session.py** | Implements the **Station-to-Station (STS)** handshake: ephemeral ECDH (P-256) key exchange signed with long-term RSA-2048 keys. Produces a shared session key via HKDF. |
-| **sessions.py** | Bridges the STS handshake with the transfer pipeline. `initiate_handshake()` performs the 3-message exchange over TCP. `handle_handshake_init()` responds to incoming handshakes. Caches session keys per peer so file transfers use AES-256-GCM encryption. |
-| **consent.py** | Handles the full consent workflow: incoming FILE_REQUEST → consent prompt → user approves → STS handshake (if needed) → AES-256-GCM encrypt → file sent. Contains message handlers for 6 message types. |
-| **verification.py** | Third-party file verification: checks file hash + validates the original owner's RSA-PSS signature, even when the file was relayed by a different peer. |
-| **revocation.py** | Key rotation: generates new RSA key, cross-signs with old key, notifies all contacts via REVOKE_KEY, handles incoming revocations with cross-signature validation. |
+| Module              | Purpose                                                                                                                                                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **state.py**        | Singleton `AppState` holding all runtime data: peers, shared files, transfers, consents, status log. Every other module reads/writes through this.                                                                                                           |
+| **protocol.py**     | Single source of truth for the wire format. Defines 14 message types, payload schemas, JSON serialization, base64 encoding for binary fields.                                                                                                                |
+| **session.py**      | Implements the **Station-to-Station (STS)** handshake: ephemeral ECDH (P-256) key exchange signed with long-term RSA-2048 keys. Produces a shared session key via HKDF.                                                                                      |
+| **sessions.py**     | Bridges the STS handshake with the transfer pipeline. `initiate_handshake()` performs the 3-message exchange over TCP. `handle_handshake_init()` responds to incoming handshakes. Caches session keys per peer so file transfers use AES-256-GCM encryption. |
+| **consent.py**      | Handles the full consent workflow: incoming FILE_REQUEST → consent prompt → user approves → STS handshake (if needed) → AES-256-GCM encrypt → file sent. Contains message handlers for 6 message types.                                                      |
+| **verification.py** | Third-party file verification: checks file hash + validates the original owner's RSA-PSS signature, even when the file was relayed by a different peer.                                                                                                      |
+| **revocation.py**   | Key rotation: generates new RSA key, cross-signs with old key, notifies all contacts via REVOKE_KEY, handles incoming revocations with cross-signature validation.                                                                                           |
 
 ### 2.2 `crypto/` — Cryptographic Primitives
 
-| Module | Purpose |
-|--------|---------|
-| **keys.py** | RSA-2048 keypair generation, PEM serialization/deserialization, save/load to disk (with optional password), SHA-256 fingerprinting. |
-| **sign.py** | RSA-PSS signatures: `sign_data()` and `verify_signature()`. Used for STS handshake, file ownership, and key cross-signing. |
-| **hashing.py** | SHA-256: `sha256_hash(bytes)` and `sha256_hash_file(path)` for streaming file hashing. |
-| **kdf.py** | Two KDFs: **HKDF-SHA256** (session key derivation from ECDH shared secret) and **PBKDF2-HMAC-SHA256** (vault password → encryption key, 600K iterations). |
-| **encrypt.py** | AES-256-GCM AEAD: `encrypt()`/`decrypt()` with 12-byte random nonce. `encrypt_file_payload()`/`decrypt_file_payload()` bind filename + hash as AAD. |
+| Module         | Purpose                                                                                                                                                   |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **keys.py**    | RSA-2048 keypair generation, PEM serialization/deserialization, save/load to disk (with optional password), SHA-256 fingerprinting.                       |
+| **sign.py**    | RSA-PSS signatures: `sign_data()` and `verify_signature()`. Used for STS handshake, file ownership, and key cross-signing.                                |
+| **hashing.py** | SHA-256: `sha256_hash(bytes)` and `sha256_hash_file(path)` for streaming file hashing.                                                                    |
+| **kdf.py**     | Two KDFs: **HKDF-SHA256** (session key derivation from ECDH shared secret) and **PBKDF2-HMAC-SHA256** (vault password → encryption key, 600K iterations). |
+| **encrypt.py** | AES-256-GCM AEAD: `encrypt()`/`decrypt()` with 12-byte random nonce. `encrypt_file_payload()`/`decrypt_file_payload()` bind filename + hash as AAD.       |
 
 ### 2.3 `network/` — Networking
 
-| Module | Purpose |
-|--------|---------|
-| **messages.py** | Builder functions for all 14 protocol message types. Wraps `protocol.create_message()` so callers don't build raw dicts. |
+| Module           | Purpose                                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **messages.py**  | Builder functions for runtime-used protocol messages. Wraps `protocol.create_message()` so callers don't build raw dicts.                     |
 | **transport.py** | TCP server with length-prefixed wire format: `[4-byte big-endian length][UTF-8 JSON]`. `TCPServer` accepts connections in background threads. |
-| **discovery.py** | mDNS peer discovery via `zeroconf`. Advertises as `_p2pshare._tcp.local.`, browses for peers, updates `app_state.peers` on add/remove. |
+| **discovery.py** | mDNS peer discovery via `zeroconf`. Advertises as `_p2pshare._tcp.local.`, browses for peers, updates `app_state.peers` on add/remove.        |
 
 ### 2.4 `storage/` — Persistent Storage
 
-| Module | Purpose |
-|--------|---------|
-| **files.py** | Manages the local shared file list: add/remove/scan `shared/` directory, SHA-256 hashing, RSA-PSS owner signatures. |
-| **manifests.py** | Stores peer file manifests received via FILE_LIST_RESPONSE. Hash verification and owner signature verification. |
-| **vault.py** | Encrypted at-rest storage: PBKDF2 → AES-256-GCM. Stores files, JSON data, and peer trust records. Format: `[salt][nonce][ciphertext+tag]`. |
+| Module           | Purpose                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **files.py**     | Manages the local shared file list: add/remove/scan `shared/` directory, SHA-256 hashing, RSA-PSS owner signatures.                        |
+| **manifests.py** | Stores peer file manifests received via FILE_LIST_RESPONSE. Hash verification and owner signature verification.                            |
+| **vault.py**     | Encrypted at-rest storage: PBKDF2 → AES-256-GCM. Stores files, JSON data, and peer trust records. Format: `[salt][nonce][ciphertext+tag]`. |
 
 ### 2.5 `ui/` — Web Interface
 
-| Module | Purpose |
-|--------|---------|
-| **routes.py** | Flask blueprint with all API endpoints (`/api/status`, `/api/add-shared-file`, `/api/request-file`, `/api/consent/...`, etc.) and the dashboard HTML route. |
-| **dashboard.html** | Main UI: peer list, shared files, consent prompts, status log. |
-| **app.js** | Frontend JS: polls `/api/status` every 2 seconds, renders peers/files/consents/status, handles button clicks. |
+| Module             | Purpose                                                                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **routes.py**      | Flask blueprint with all API endpoints and page routes. Note: some endpoints are implemented but not currently called by the frontend JS/UI path (see Section 3.1). |
+| **dashboard.html** | Main UI: peer list, shared files, consent prompts, status log.                                                                                                      |
+| **app.js**         | Frontend JS: polls `/api/status` every 2 seconds, renders peers/files/consents/status, handles button clicks.                                                       |
 
 ### 2.6 `main.py` — Entry Point
 
 Wires everything together:
+
 1. Generates/loads RSA identity keys
 2. Starts the TCP server (background thread)
 3. Starts mDNS discovery (background thread)
-4. Registers the message dispatcher (routes 8 message types to handlers, including KEY_EXCHANGE_INIT)
+4. Registers the message dispatcher (routes 10 message types to handlers)
 5. Launches the Flask web UI
 
 ---
 
-## 3. Architecture Diagram
+## 3. Architecture Diagram (Simplified)
 
 ```mermaid
-graph TB
-    subgraph "User"
-        Browser["Browser<br/>(localhost:5001)"]
-    end
+flowchart LR
+    B[Browser UI\ndashboard.html + app.js]
+    R[Flask Routes\nui/routes.py]
+    C[Core Logic\nstate consent sessions\nverification revocation]
+    N[Network\ntransport discovery messages]
+    S[Storage\nfiles manifests vault]
+    X[Crypto\nkeys sign hash kdf encrypt]
+    P[Remote Peers]
 
-    subgraph "UI Layer"
-        Routes["routes.py<br/>Flask API"]
-        HTML["dashboard.html<br/>+ app.js"]
-    end
-
-    subgraph "Core Logic"
-        State["state.py<br/>AppState Singleton"]
-        Protocol["protocol.py<br/>Message Schema"]
-        Session["session.py<br/>STS Handshake"]
-        Sessions["sessions.py<br/>Session Manager"]
-        Consent["consent.py<br/>Transfer Workflow"]
-        Verify["verification.py<br/>3rd-Party Verify"]
-        Revoke["revocation.py<br/>Key Rotation"]
-    end
-
-    subgraph "Crypto Primitives"
-        Keys["keys.py<br/>RSA-2048"]
-        Sign["sign.py<br/>RSA-PSS"]
-        Hash["hashing.py<br/>SHA-256"]
-        KDF["kdf.py<br/>HKDF + PBKDF2"]
-        Encrypt["encrypt.py<br/>AES-256-GCM"]
-    end
-
-    subgraph "Network"
-        Messages["messages.py<br/>Message Builders"]
-        Transport["transport.py<br/>TCP Server"]
-        Discovery["discovery.py<br/>mDNS"]
-    end
-
-    subgraph "Storage"
-        Files["files.py<br/>Shared Files"]
-        Manifests["manifests.py<br/>Peer Manifests"]
-        Vault["vault.py<br/>Encrypted Vault"]
-    end
-
-    subgraph "Entry Point"
-        Main["main.py<br/>Dispatcher"]
-    end
-
-    Browser -->|"HTTP"| Routes
-    Routes --> HTML
-    Routes --> State
-    Routes --> Files
-    Routes --> Consent
-    Routes --> Verify
-    Routes --> Revoke
-
-    Main --> Routes
-    Main --> Transport
-    Main --> Discovery
-    Main --> Consent
-    Main --> Revoke
-    Main --> Sessions
-
-    Transport -->|"incoming msg"| Main
-    Discovery -->|"peer found"| State
-
-    Consent --> State
-    Consent --> Messages
-    Consent --> Transport
-    Consent --> Files
-    Consent --> Manifests
-    Consent --> Hash
-    Consent --> Sessions
-    Consent --> Encrypt
-
-    Sessions --> Session
-    Sessions --> Transport
-    Sessions --> Messages
-    Sessions --> State
-
-    Verify --> State
-    Verify --> Sign
-    Verify --> Manifests
-
-    Revoke --> State
-    Revoke --> Keys
-    Revoke --> Sign
-    Revoke --> Messages
-    Revoke --> Transport
-    Revoke --> Sessions
-
-    Session --> Keys
-    Session --> Sign
-    Session --> KDF
-
-    Messages --> Protocol
-    Files --> Hash
-    Files --> Sign
-    Manifests --> Hash
-    Manifests --> Sign
-    Manifests --> Keys
-    Vault --> KDF
-    Vault --> Encrypt
+    B -->|HTTP/JSON| R
+    R --> C
+    C --> N
+    C --> S
+    C --> X
+    N <--> P
 ```
 
 ### Data Flow Summary
 
 ```
-┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐
-│  Browser  │─HTTP─▶  routes  │─────▶│  core/*  │─────▶│ crypto/* │
-│  (app.js) │◀─JSON─│  (.py)  │◀─────│          │◀─────│          │
-└──────────┘      └──────────┘      └──────────┘      └──────────┘
-                       │ ▲                │ ▲
-                       │ │                │ │
-                       ▼ │                ▼ │
-                  ┌──────────┐      ┌──────────┐
-                  │ storage/*│      │ network/*│
-                  │          │      │  (TCP)   │
-                  └──────────┘      └────┬─────┘
-                                         │
-                                    ┌────▼─────┐
-                                    │  Remote   │
-                                    │  Peers    │
-                                    └──────────┘
+Browser -> routes -> core
+core -> storage
+core -> network -> remote peers
+core -> crypto
 ```
 
 **Key rule:** `crypto/` modules are stateless and pure. `core/` modules hold logic but access `state.py` for data. `network/` and `storage/` handle I/O. `ui/` connects the user to everything.
+
+### 3.1 Route Usage Audit (Confirmed)
+
+This audit checks actual callers in `ui/static/app.js` and HTML form actions.
+
+Routes currently used by the frontend path:
+
+- `GET /` and `GET /dashboard`
+- `GET /setup`, `GET /unlock`
+- `POST /api/vault/setup`, `POST /api/vault/unlock` (vault setup form)
+- `GET /api/vault/download/<filename>`
+- `POST /api/refresh-peers`
+- `POST /api/scan-shared`
+- `POST /api/remove-shared-file`
+- `POST /api/request-file`
+- `POST /api/request-file-list`
+- `POST /api/send-file`
+- `POST /api/consent/<request_id>/<action>`
+- `POST /api/verify-peer`
+- `POST /api/confirm-verify`
+- `POST /api/reject-verify`
+- `GET /api/status`
+
+Routes implemented but not currently called by frontend JS/templates:
+
+- `GET /api/vault/files`
+- `POST /api/add-shared-file`
+- `POST /api/rotate-key`
+- `POST /api/verify-file`
+
+Note: key migration/key rotation is intentionally left in backend and may be wired later.
+
+### 3.2 Runtime-Dead Message Helpers and Logic Duplication
+
+Removed from runtime helper layer:
+
+- `network.messages.peer_list_request()`
+- `network.messages.peer_list_response()`
+
+Now reused in runtime flow:
+
+- `core.verification.verify_received_file()` (called from `core.consent.handle_file_send`)
+
+Why this happens:
+
+- Peer discovery is currently mDNS-first (`network.discovery`) and updates `app_state.peers` directly.
+- File receive verification is handled inline in `core.consent` via hash checks and owner-signature checks.
+
+Refactor direction (recommended):
+
+- Move verification code generation into one shared helper in `core` and call it from both `core.sessions` and `ui.routes`.
+- Move full received-file verification into `core.verification` and call it from `core.consent` instead of duplicating checks inline.
+- Keep `peer_list_request/response` only if you plan a non-mDNS fallback. Otherwise mark them legacy and deprecate with tests updated accordingly.
 
 ---
 
@@ -258,60 +216,67 @@ graph TB
 Read the codebase in this order. Each file builds on concepts from the files above it.
 
 ### Layer 1: Data Model
-| # | File | Why read first |
-|---|------|---------------|
-| 1 | `core/state.py` | Defines every data structure: `PeerInfo`, `SharedFile`, `TransferRecord`, `ConsentRequest`, `AppState`. Everything references these. |
-| 2 | `core/protocol.py` | Defines all 14 message types, their required fields, and how JSON serialization works (including base64 for binary data). |
+
+| #   | File               | Why read first                                                                                                                       |
+| --- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `core/state.py`    | Defines every data structure: `PeerInfo`, `SharedFile`, `TransferRecord`, `ConsentRequest`, `AppState`. Everything references these. |
+| 2   | `core/protocol.py` | Defines all 14 message types, their required fields, and how JSON serialization works (including base64 for binary data).            |
 
 ### Layer 2: Crypto Primitives
-| # | File | Why |
-|---|------|-----|
-| 3 | `crypto/keys.py` | RSA-2048 key generation and PEM serialization. Required to understand identity. |
-| 4 | `crypto/sign.py` | RSA-PSS signatures — used everywhere (STS, file ownership, key revocation). |
-| 5 | `crypto/hashing.py` | SHA-256 — used for file integrity and fingerprinting. |
-| 6 | `crypto/kdf.py` | HKDF and PBKDF2 — key derivation for sessions and vault. |
-| 7 | `crypto/encrypt.py` | AES-256-GCM — the cipher used for all encryption (transit + at-rest). |
+
+| #   | File                | Why                                                                             |
+| --- | ------------------- | ------------------------------------------------------------------------------- |
+| 3   | `crypto/keys.py`    | RSA-2048 key generation and PEM serialization. Required to understand identity. |
+| 4   | `crypto/sign.py`    | RSA-PSS signatures — used everywhere (STS, file ownership, key revocation).     |
+| 5   | `crypto/hashing.py` | SHA-256 — used for file integrity and fingerprinting.                           |
+| 6   | `crypto/kdf.py`     | HKDF and PBKDF2 — key derivation for sessions and vault.                        |
+| 7   | `crypto/encrypt.py` | AES-256-GCM — the cipher used for all encryption (transit + at-rest).           |
 
 ### Layer 3: Networking
-| # | File | Why |
-|---|------|-----|
-| 8 | `network/messages.py` | Builder functions that use `protocol.py` to create messages. |
-| 9 | `network/transport.py` | TCP server and wire format. How messages physically travel between peers. |
-| 10 | `network/discovery.py` | mDNS — how peers find each other on the LAN. |
+
+| #   | File                   | Why                                                                       |
+| --- | ---------------------- | ------------------------------------------------------------------------- |
+| 8   | `network/messages.py`  | Builder functions that use `protocol.py` to create messages.              |
+| 9   | `network/transport.py` | TCP server and wire format. How messages physically travel between peers. |
+| 10  | `network/discovery.py` | mDNS — how peers find each other on the LAN.                              |
 
 ### Layer 4: Storage
-| # | File | Why |
-|---|------|-----|
-| 11 | `storage/files.py` | How files are added to the share list and hashed. |
-| 12 | `storage/manifests.py` | How peer file lists are stored and verified. |
-| 13 | `storage/vault.py` | Encrypted at-rest storage using PBKDF2 → AES-GCM. |
+
+| #   | File                   | Why                                               |
+| --- | ---------------------- | ------------------------------------------------- |
+| 11  | `storage/files.py`     | How files are added to the share list and hashed. |
+| 12  | `storage/manifests.py` | How peer file lists are stored and verified.      |
+| 13  | `storage/vault.py`     | Encrypted at-rest storage using PBKDF2 → AES-GCM. |
 
 ### Layer 5: Application Logic
-| # | File | Why |
-|---|------|-----|
-| 14 | `core/session.py` | STS handshake state machine — combines keys, signing, and KDF into a session. |
-| 15 | `core/sessions.py` | Session manager — performs handshakes over TCP, caches session keys per peer. |
-| 16 | `core/consent.py` | File transfer workflow — the core business logic. Now encrypts/decrypts files using session keys. |
-| 17 | `core/verification.py` | Third-party verification — combines signing, hashing, and manifests. |
-| 18 | `core/revocation.py` | Key rotation — combines key generation, signing, and transport. Clears sessions on rotation. |
+
+| #   | File                   | Why                                                                                               |
+| --- | ---------------------- | ------------------------------------------------------------------------------------------------- |
+| 14  | `core/session.py`      | STS handshake state machine — combines keys, signing, and KDF into a session.                     |
+| 15  | `core/sessions.py`     | Session manager — performs handshakes over TCP, caches session keys per peer.                     |
+| 16  | `core/consent.py`      | File transfer workflow — the core business logic. Now encrypts/decrypts files using session keys. |
+| 17  | `core/verification.py` | Third-party verification — combines signing, hashing, and manifests.                              |
+| 18  | `core/revocation.py`   | Key rotation — combines key generation, signing, and transport. Clears sessions on rotation.      |
 
 ### Layer 6: Integration
-| # | File | Why |
-|---|------|-----|
-| 19 | `main.py` | Entry point — see how all modules are wired together. |
-| 20 | `ui/routes.py` | API layer — see how the UI calls into core logic. |
-| 21 | `ui/templates/dashboard.html` | HTML structure. |
-| 22 | `ui/static/app.js` | Frontend polling and UI rendering. |
+
+| #   | File                          | Why                                                   |
+| --- | ----------------------------- | ----------------------------------------------------- |
+| 19  | `main.py`                     | Entry point — see how all modules are wired together. |
+| 20  | `ui/routes.py`                | API layer — see how the UI calls into core logic.     |
+| 21  | `ui/templates/dashboard.html` | HTML structure.                                       |
+| 22  | `ui/static/app.js`            | Frontend polling and UI rendering.                    |
 
 ### Layer 7: Tests
-| # | File | Why |
-|---|------|-----|
-| 23 | `tests/test_crypto.py` | Validates all crypto primitives + STS handshake. |
-| 24 | `tests/test_encrypt.py` | Validates AES-256-GCM including AAD binding. |
-| 25 | `tests/test_protocol.py` | Validates message creation, validation, and serialization. |
-| 26 | `tests/test_transport.py` | Validates TCP send/receive over real sockets. |
-| 27 | `tests/test_vault.py` | Validates vault encryption, file/JSON storage, trust records. |
-| 28 | `tests/test_verification.py` | Validates third-party hash + signature verification. |
+
+| #   | File                         | Why                                                           |
+| --- | ---------------------------- | ------------------------------------------------------------- |
+| 23  | `tests/test_crypto.py`       | Validates all crypto primitives + STS handshake.              |
+| 24  | `tests/test_encrypt.py`      | Validates AES-256-GCM including AAD binding.                  |
+| 25  | `tests/test_protocol.py`     | Validates message creation, validation, and serialization.    |
+| 26  | `tests/test_transport.py`    | Validates TCP send/receive over real sockets.                 |
+| 27  | `tests/test_vault.py`        | Validates vault encryption, file/JSON storage, trust records. |
+| 28  | `tests/test_verification.py` | Validates third-party hash + signature verification.          |
 
 ---
 
@@ -705,12 +670,12 @@ sequenceDiagram
 
 ## 6. Test Summary Table
 
-| Test File | Tests | Modules Exercised | Security Properties Verified |
-|-----------|-------|-------------------|------------------------------|
-| `test_crypto.py` | 35 | keys, sign, hashing, kdf, session | RSA-2048 gen, PSS signatures, SHA-256, HKDF/PBKDF2, STS mutual auth + PFS |
-| `test_encrypt.py` | 15 | encrypt | AES-256-GCM confidentiality, integrity (tamper detection), AAD binding |
-| `test_protocol.py` | 32 | protocol, messages | Message format, validation, base64 binary encoding |
-| `test_transport.py` | 6 | transport, messages | Length-prefixed TCP wire format, server lifecycle |
-| `test_vault.py` | 15 | vault, kdf, encrypt | At-rest encryption (PBKDF2 → AES-GCM), wrong password rejection |
-| `test_verification.py` | 8 | verification, manifests, sign, hashing, state | Third-party hash + signature verification |
-| **Total** | **111** | | |
+| Test File              | Tests   | Modules Exercised                             | Security Properties Verified                                              |
+| ---------------------- | ------- | --------------------------------------------- | ------------------------------------------------------------------------- |
+| `test_crypto.py`       | 35      | keys, sign, hashing, kdf, session             | RSA-2048 gen, PSS signatures, SHA-256, HKDF/PBKDF2, STS mutual auth + PFS |
+| `test_encrypt.py`      | 15      | encrypt                                       | AES-256-GCM confidentiality, integrity (tamper detection), AAD binding    |
+| `test_protocol.py`     | 32      | protocol, messages                            | Message format, validation, base64 binary encoding                        |
+| `test_transport.py`    | 6       | transport, messages                           | Length-prefixed TCP wire format, server lifecycle                         |
+| `test_vault.py`        | 15      | vault, kdf, encrypt                           | At-rest encryption (PBKDF2 → AES-GCM), wrong password rejection           |
+| `test_verification.py` | 8       | verification, manifests, sign, hashing, state | Third-party hash + signature verification                                 |
+| **Total**              | **111** |                                               |                                                                           |

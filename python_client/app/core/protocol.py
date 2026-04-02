@@ -36,8 +36,6 @@ PROTOCOL_VERSION = "1.0"
 class MessageType:
     """Enum-like class for message types. Not a real enum for JSON simplicity."""
     PEER_ANNOUNCE       = "PEER_ANNOUNCE"
-    PEER_LIST_REQUEST   = "PEER_LIST_REQUEST"
-    PEER_LIST_RESPONSE  = "PEER_LIST_RESPONSE"
     KEY_EXCHANGE_INIT    = "KEY_EXCHANGE_INIT"
     KEY_EXCHANGE_RESPONSE = "KEY_EXCHANGE_RESPONSE"
     KEY_EXCHANGE_CONFIRM  = "KEY_EXCHANGE_CONFIRM"
@@ -66,8 +64,6 @@ VALID_MESSAGE_TYPES = {
 # ---------------------------------------------------------------------------
 REQUIRED_PAYLOAD_FIELDS: dict[str, list[str]] = {
     MessageType.PEER_ANNOUNCE:         ["peer_id", "port"],
-    MessageType.PEER_LIST_REQUEST:     ["peer_id"],
-    MessageType.PEER_LIST_RESPONSE:    ["peer_id", "peers"],
     MessageType.KEY_EXCHANGE_INIT:     ["peer_id", "ephemeral_public_key"],
     MessageType.KEY_EXCHANGE_RESPONSE: ["peer_id", "ephemeral_public_key",
                                         "long_term_public_key", "signature"],

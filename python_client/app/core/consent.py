@@ -326,7 +326,8 @@ def handle_file_request(msg: dict, sock, addr) -> None:
     if not shared and file_hash:
         shared = find_received_file_by_hash(file_hash)
         if shared:
-            logger.info(f"File '{filename}' found in received/ directory (hash match)")
+            source = "vault" if shared.filepath.endswith(".vault") else "received/"
+            logger.info(f"File '{filename}' found in {source} (hash match) — can serve to peer")
     if not shared:
         # Send error back
         err = error_message(app_state.peer_id, "FILE_NOT_FOUND",
@@ -415,9 +416,11 @@ def handle_file_send(msg: dict, sock, addr) -> None:
         )
         return
 
-    # Verify the hash of the decrypted plaintext
-    actual_hash = sha256_hash(file_data)
-    if file_hash and actual_hash != file_hash:
+    # Verify the hash of the decrypted plaintext via core.verification
+    from app.core.verification import verify_received_file
+    verify_result = verify_received_file(file_data, file_hash, "", peer_id)
+    actual_hash = verify_result["actual_hash"]
+    if file_hash and not verify_result["hash_valid"]:
         app_state.add_status(
             f"Hash mismatch for '{filename}' from {peer_id}! File rejected.",
             level="error"

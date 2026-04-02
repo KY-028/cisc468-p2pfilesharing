@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <meta name="description" content="CISC 468 Secure Peer-to-Peer File Sharing Application">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
     <!-- Top navigation bar -->
     <header class="navbar">
@@ -14,11 +16,84 @@
             <span class="navbar-icon">🔒</span>
             <span class="navbar-title">P2P Secure File Sharing</span>
         </div>
-        <div class="navbar-peer-id">
+        <button class="navbar-peer-id" id="identity-trigger" type="button" aria-haspopup="dialog" aria-expanded="false">
             <span class="label">My Peer ID:</span>
-            <code class="peer-id-value">{{ state.peer_id }}</code>
-        </div>
+            <code class="peer-id-value" id="navbar-peer-id-value">{{ state.peer_id }}</code>
+        </button>
     </header>
+
+    <section class="identity-panel hidden" id="identity-panel" role="dialog" aria-modal="false"
+        aria-label="My identity and key management">
+        <div class="identity-panel-header">
+            <h2>My Identity</h2>
+        </div>
+        <div class="identity-panel-body">
+            <div class="info-row">
+                <span class="info-label">Peer ID</span>
+                <code id="identity-peer-id" class="info-value mono">{{ state.peer_id }}</code>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Fingerprint</span>
+                <code id="identity-fingerprint"
+                    class="info-value mono small">{{ state.fingerprint or "(generating…)" }}</code>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Status</span>
+                <span class="status-badge online" id="identity-status-badge">Online</span>
+            </div>
+        </div>
+        <div class="identity-panel-actions">
+            <button class="btn btn-primary" id="btn-rotate-key" type="button">Rotate Identity Key</button>
+            <button class="btn btn-secondary" id="btn-change-vault-key" type="button">Change Vault Key</button>
+        </div>
+    </section>
+
+    <div id="rotate-key-modal" class="modal hidden">
+        <div class="modal-backdrop" id="rotate-key-modal-backdrop"></div>
+        <div class="modal-dialog">
+            <h2 class="modal-title">Rotate Identity Key</h2>
+            <p class="modal-body">
+                This will generate a new RSA key pair, clear all active sessions, and require contacts to re-verify your
+                fingerprint.
+                Continue only if you need to revoke your old identity key.
+            </p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="rotate-key-cancel" type="button">Cancel</button>
+                <button class="btn btn-danger" id="rotate-key-confirm" type="button">Rotate Key</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="vault-key-modal" class="modal hidden">
+        <div class="modal-backdrop" id="vault-key-modal-backdrop"></div>
+        <div class="modal-dialog">
+            <h2 class="modal-title">Change Vault Key</h2>
+            <p class="modal-body">
+                Enter your current password to verify ownership, then set a new vault password.
+                Existing vault files will be re-encrypted with a newly derived key.
+            </p>
+            <form id="vault-key-form" class="vault-key-form">
+                <label for="vault-old-password">Current password</label>
+                <input id="vault-old-password" name="old_password" type="password" minlength="8" required
+                    autocomplete="current-password">
+
+                <label for="vault-new-password">New password</label>
+                <input id="vault-new-password" name="new_password" type="password" minlength="8" required
+                    autocomplete="new-password">
+
+                <label for="vault-confirm-password">Confirm new password</label>
+                <input id="vault-confirm-password" name="confirm_password" type="password" minlength="8" required
+                    autocomplete="new-password">
+
+                <p id="vault-key-feedback" class="vault-key-feedback hidden"></p>
+
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" id="vault-key-cancel" type="button">Cancel</button>
+                    <button class="btn btn-primary" id="vault-key-submit" type="submit">Update Vault Key</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Main content area (full height, no footer) -->
     <main class="main-content">
@@ -27,4 +102,5 @@
 
     <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
+
 </html>
