@@ -608,12 +608,22 @@ namespace P2PFT_Cs
             {
                 byte[] data = File.ReadAllBytes(filePath);
                 string hash = TransmissionCrypto.ComputeSha256Hex(data);
+
+                // Sign the hash with our RSA-PSS key (for third-party verification)
+                string signature = null;
+                if (_validation != null)
+                {
+                    byte[] hashBytes = System.Text.Encoding.UTF8.GetBytes(hash);
+                    signature = _validation.SignData(hashBytes);
+                }
+
                 result.Add(new DataObj.FileInfo
                 {
                     Filename = Path.GetFileName(filePath),
                     Size = data.LongLength,
                     FileHash = hash,
                     OwnerId = _peerId,
+                    Signature = signature,
                 });
             }
             return result;

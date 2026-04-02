@@ -157,12 +157,18 @@ namespace P2PFT_Cs
                                 StringComparison.OrdinalIgnoreCase))
                 return false;
 
+            // Preserve trust if the peer already exists with the same key
+            PeerRecord existing;
+            bool preserveTrust = _peers.TryGetValue(peerId, out existing)
+                                 && existing.Trusted
+                                 && existing.PublicKeyPem == publicKeyPem;
+
             _peers[peerId] = new PeerRecord
             {
                 PeerId = peerId,
                 PublicKeyPem = publicKeyPem,
                 Fingerprint = computedFingerprint,
-                Trusted = false,
+                Trusted = preserveTrust,
                 LastUpdatedUtc = DateTime.UtcNow.ToString("o"),
             };
 
@@ -580,6 +586,16 @@ namespace P2PFT_Cs
         public string CrossSign(AsymmetricKeyParameter oldPrivateKey, byte[] data)
         {
             byte[] signature = RsaPssSign(oldPrivateKey, data);
+            return Convert.ToBase64String(signature);
+        }
+
+        /// <summary>
+        /// Signs arbitrary data with our long-term RSA private key (RSA-PSS SHA-256).
+        /// Returns the signature as a base64 string.
+        /// </summary>
+        public string SignData(byte[] data)
+        {
+            byte[] signature = RsaPssSign(_account.RsaKeyPair.Private, data);
             return Convert.ToBase64String(signature);
         }
 
