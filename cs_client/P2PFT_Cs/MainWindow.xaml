@@ -1,0 +1,657 @@
+﻿<Window x:Class="P2PFT_Cs.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:P2PFT_Cs"
+        mc:Ignorable="d"
+        Title="P2P Secure File Sharing"
+        Height="720" Width="1100"
+        MinHeight="500" MinWidth="780"
+        Background="{StaticResource BgBodyBrush}"
+        WindowStartupLocation="CenterScreen"
+        Closing="OnWindowClosing">
+
+    <Grid>
+        <!-- ════════════════════════════════════════════════════
+             LAYER 0 — Vault auth overlay
+             ════════════════════════════════════════════════════ -->
+        <Grid Visibility="{Binding IsVaultLocked, Converter={StaticResource BoolToVis}}"
+              Panel.ZIndex="100"
+              Background="{StaticResource BgBodyBrush}">
+            <Border Background="{StaticResource BgCardBrush}"
+                    CornerRadius="10" Padding="44,40" MaxWidth="440"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="20" ShadowDepth="4"
+                                      Opacity="0.10" Color="Black"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="🔐" FontSize="40"
+                               HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                    <TextBlock x:Name="VaultTitle" FontSize="20" FontWeight="Bold"
+                               HorizontalAlignment="Center"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Text="Unlock Vault"/>
+                    <TextBlock x:Name="VaultSubtitle" TextWrapping="Wrap" FontSize="12.5"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,6,0,20"
+                               TextAlignment="Center" MaxWidth="360"
+                               Text="Enter your vault password to decrypt your stored files."/>
+
+                    <!-- Error -->
+                    <Border Background="{StaticResource ErrorBgBrush}"
+                            CornerRadius="6" Padding="12,10" Margin="0,0,0,14"
+                            Visibility="{Binding HasVaultError, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding VaultError}"
+                                   Foreground="{StaticResource ErrorBrush}"
+                                   FontSize="12" TextWrapping="Wrap"/>
+                    </Border>
+
+                    <TextBlock Text="Password" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4"/>
+                    <PasswordBox x:Name="VaultPassword"
+                                 Style="{StaticResource InputPassword}" Margin="0,0,0,12"/>
+
+                    <StackPanel Visibility="{Binding IsFirstRun, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Confirm Password" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4"/>
+                        <PasswordBox x:Name="VaultPasswordConfirm"
+                                     Style="{StaticResource InputPassword}" Margin="0,0,0,12"/>
+                    </StackPanel>
+
+                    <Button x:Name="VaultSubmitBtn" Style="{StaticResource BtnPrimary}"
+                            Click="OnVaultSubmit" Content="Unlock"
+                            Padding="14,12" FontSize="14" FontWeight="SemiBold"/>
+
+                    <TextBlock TextWrapping="Wrap" FontSize="10.5"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               Margin="0,18,0,0" TextAlignment="Center" MaxWidth="360"
+                               Text="Your files are encrypted with AES-256-GCM. The key is derived from your password using PBKDF2-HMAC-SHA256 (600,000 iterations) and held only in memory."/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ════════════════════════════════════════════════════
+             LAYER 1 — Main application
+             ════════════════════════════════════════════════════ -->
+        <DockPanel Visibility="{Binding IsVaultUnlocked, Converter={StaticResource BoolToVis}}">
+
+            <!-- ── Top navbar ─────────────────────────────────── -->
+            <Border DockPanel.Dock="Top"
+                    Background="{StaticResource BgCardBrush}"
+                    BorderBrush="{StaticResource AppBorderBrush}"
+                    BorderThickness="0,0,0,1" Padding="20,10">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="4" ShadowDepth="1"
+                                      Opacity="0.04" Color="Black"/>
+                </Border.Effect>
+                <DockPanel>
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                        <TextBlock Text="🔒" FontSize="18"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="P2P Secure File Sharing"
+                                   FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="My Peer ID:" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Margin="0,0,6,0" VerticalAlignment="Center"/>
+                        <Border Background="{StaticResource BgInputBrush}"
+                                BorderBrush="{StaticResource AppBorderBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="8,3">
+                            <TextBlock Text="{Binding PeerId}"
+                                       FontFamily="Consolas" FontSize="11"
+                                       Foreground="{StaticResource AccentBrush}"/>
+                        </Border>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- ── Body: Sidebar + Main ───────────────────────── -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="270"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- ═══════ LEFT SIDEBAR ═══════ -->
+                <Border Grid.Column="0" Background="{StaticResource BgSidebarBrush}">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" BorderBrush="#22FFFFFF"
+                                BorderThickness="0,0,0,1" Padding="14,12">
+                            <DockPanel>
+                                <TextBlock Text="Peers" Foreground="White"
+                                           FontSize="14" FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
+                                <Button Style="{StaticResource BtnIcon}" Content="⟳"
+                                        DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                        ToolTip="Refresh peers" Click="OnRefreshPeers"/>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Empty-state text -->
+                        <TextBlock Text="Searching for peers…"
+                                   Foreground="{StaticResource TextSidebarBrush}"
+                                   FontSize="12" HorizontalAlignment="Center"
+                                   Margin="0,24,0,0" FontStyle="Italic"
+                                   Visibility="{Binding HasNoPeers, Converter={StaticResource BoolToVis}}"/>
+
+                        <ListBox ItemsSource="{Binding Peers}"
+                                 SelectedItem="{Binding SelectedPeer}"
+                                 Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 Padding="6">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="0,1"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="bg" CornerRadius="6"
+                                                        Padding="10,9" Cursor="Hand">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="bg" Property="Background"
+                                                                Value="#0FFFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="bg" Property="Background"
+                                                                Value="#2E4F7DF7"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="10" Height="10"
+                                                 Fill="{Binding StatusClass,
+                                                        Converter={StaticResource PeerDotConv}}"
+                                                 Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Foreground="White" FontSize="12.5"
+                                                       FontWeight="Medium"/>
+                                            <TextBlock Text="{Binding AddressDisplay}"
+                                                       Foreground="{StaticResource TextSidebarBrush}"
+                                                       FontFamily="Consolas" FontSize="10.5"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+
+                <!-- ═══════ MAIN PANEL ═══════ -->
+                <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="20">
+                    <Grid>
+                        <!-- ── HOME VIEW ───────────────────────── -->
+                        <StackPanel Visibility="{Binding IsHomeViewActive,
+                                                         Converter={StaticResource BoolToVis}}">
+
+                            <!-- Identity -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Text="👤  My Identity"/>
+                                    </Border>
+                                    <StackPanel Margin="16,10">
+                                        <DockPanel Margin="0,4">
+                                            <TextBlock Text="Peer ID" Width="100"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="{Binding PeerId}" FontFamily="Consolas"
+                                                       FontSize="11.5" Foreground="{StaticResource AccentBrush}"/>
+                                        </DockPanel>
+                                        <DockPanel Margin="0,4">
+                                            <TextBlock Text="Fingerprint" Width="100"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="{Binding Fingerprint}" FontFamily="Consolas"
+                                                       FontSize="10" Foreground="{StaticResource AccentBrush}"
+                                                       TextWrapping="Wrap"/>
+                                        </DockPanel>
+                                        <DockPanel Margin="0,4">
+                                            <TextBlock Text="Network" Width="100"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="{Binding NetworkStatus}" FontSize="11.5"
+                                                       Foreground="{StaticResource SuccessBrush}"/>
+                                        </DockPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Shared Files -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <DockPanel>
+                                            <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       Text="📁  My Shared Files"/>
+                                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
+                                                        HorizontalAlignment="Right">
+                                                <Button Style="{StaticResource BtnSmall}"
+                                                        Background="{StaticResource AccentBrush}"
+                                                        Foreground="White" Content="+ Add File"
+                                                        Click="OnAddFile" Margin="0,0,6,0"/>
+                                                <Button Style="{StaticResource BtnSmall}"
+                                                        Background="{StaticResource BgInputBrush}"
+                                                        Foreground="{StaticResource TextSecondaryBrush}"
+                                                        BorderBrush="{StaticResource AppBorderBrush}"
+                                                        BorderThickness="1" Content="Scan Folder"
+                                                        Click="OnScanFiles"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding SharedFiles}" Margin="10,6">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource BgInputBrush}"
+                                                        BorderBrush="{StaticResource AppBorderBrush}"
+                                                        BorderThickness="1" CornerRadius="6"
+                                                        Padding="12,8" Margin="0,3">
+                                                    <DockPanel>
+                                                        <Button Style="{StaticResource BtnSmall}"
+                                                                Content="✕" Background="Transparent"
+                                                                Foreground="{StaticResource TextMutedBrush}"
+                                                                DockPanel.Dock="Right"
+                                                                Click="OnRemoveFile"
+                                                                Tag="{Binding Filename}"
+                                                                ToolTip="Remove from shared"/>
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="12.5" FontWeight="Medium"
+                                                                       Text="{Binding Filename}"/>
+                                                            <TextBlock FontFamily="Consolas" FontSize="10.5"
+                                                                       Foreground="{StaticResource TextMutedBrush}"
+                                                                       Text="{Binding SizeAndHash}"/>
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Incoming Requests -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Text="🔔  Incoming Requests"/>
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding PendingConsents}" Margin="10,6">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource WarningBgBrush}"
+                                                        BorderBrush="{StaticResource WarningBrush}"
+                                                        BorderThickness="1" CornerRadius="6"
+                                                        Padding="12,8" Margin="0,3">
+                                                    <DockPanel>
+                                                        <Button Style="{StaticResource BtnSmall}"
+                                                                Background="{StaticResource SuccessBrush}"
+                                                                Foreground="White" Content="Review"
+                                                                DockPanel.Dock="Right"
+                                                                Click="OnReviewConsent"
+                                                                Tag="{Binding RequestId}"/>
+                                                        <TextBlock FontSize="12" TextWrapping="Wrap"
+                                                                   VerticalAlignment="Center">
+                                                            <Run FontWeight="Bold"
+                                                                 Text="{Binding PeerName, Mode=OneWay}"/>
+                                                            <Run Text=" wants to "/>
+                                                            <Run Text="{Binding ActionDescription, Mode=OneWay}"/>
+                                                            <Run Text=" "/>
+                                                            <Run FontStyle="Italic"
+                                                                 Text="{Binding Filename, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Transfer History -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Text="📦  Transfer History"/>
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Transfers}" Margin="10,6">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource BgInputBrush}"
+                                                        BorderBrush="{StaticResource AppBorderBrush}"
+                                                        BorderThickness="1" CornerRadius="6"
+                                                        Padding="12,8" Margin="0,3">
+                                                    <DockPanel>
+                                                        <TextBlock Text="{Binding Timestamp,
+                                                                       Converter={StaticResource TimestampConv}}"
+                                                                   FontFamily="Consolas" FontSize="9.5"
+                                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                                   DockPanel.Dock="Right" VerticalAlignment="Center"/>
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="12" FontWeight="Medium">
+                                                                <Run Text="{Binding DirectionIcon, Mode=OneWay}"/>
+                                                                <Run Text=" "/>
+                                                                <Run Text="{Binding Filename, Mode=OneWay}"/>
+                                                            </TextBlock>
+                                                            <TextBlock FontSize="10.5"
+                                                                       Foreground="{StaticResource TextMutedBrush}">
+                                                                <Run Text="{Binding PeerId, Mode=OneWay}"/>
+                                                                <Run Text=" · "/>
+                                                                <Run Text="{Binding Status, Mode=OneWay}"/>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Activity Log -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Text="📋  Activity Log"/>
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding StatusLog}"
+                                                  Margin="8,4" MaxHeight="260">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border CornerRadius="4" Padding="8,5" Margin="0,2"
+                                                        Background="{Binding Level,
+                                                            Converter={StaticResource StatusBgConv}}">
+                                                    <DockPanel>
+                                                        <TextBlock Text="{Binding Timestamp,
+                                                                       Converter={StaticResource TimestampConv}}"
+                                                                   FontFamily="Consolas" FontSize="9.5"
+                                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                                   DockPanel.Dock="Right" VerticalAlignment="Top"
+                                                                   Margin="10,0,0,0"/>
+                                                        <Ellipse Width="6" Height="6"
+                                                                 Fill="{Binding Level,
+                                                                     Converter={StaticResource StatusFgConv}}"
+                                                                 VerticalAlignment="Top" Margin="0,5,8,0"/>
+                                                        <TextBlock Text="{Binding Message}" FontSize="12"
+                                                                   TextWrapping="Wrap"
+                                                                   Foreground="{Binding Level,
+                                                                       Converter={StaticResource StatusFgConv}}"/>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Encrypted Vault -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Text="🔒  Encrypted Vault"/>
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding VaultFiles}" Margin="10,6">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource BgInputBrush}"
+                                                        BorderBrush="{StaticResource AppBorderBrush}"
+                                                        BorderThickness="1" CornerRadius="6"
+                                                        Padding="12,8" Margin="0,3">
+                                                    <DockPanel>
+                                                        <Button Style="{StaticResource BtnSmall}"
+                                                                Background="{StaticResource AccentBrush}"
+                                                                Foreground="White" Content="↓ Download"
+                                                                DockPanel.Dock="Right"
+                                                                Click="OnDownloadVaultFile"
+                                                                Tag="{Binding}"/>
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="12.5" FontWeight="Medium">
+                                                                <Run Text="🔒 "/><Run Text="{Binding Mode=OneWay}"/>
+                                                            </TextBlock>
+                                                            <TextBlock Text="Encrypted at rest (AES-256-GCM)"
+                                                                       FontSize="10.5"
+                                                                       Foreground="{StaticResource TextMutedBrush}"/>
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- ── PEER DETAIL VIEW ────────────────── -->
+                        <StackPanel Visibility="{Binding IsPeerViewActive,
+                                                         Converter={StaticResource BoolToVis}}">
+                            <!-- Back + Peer name + status badge -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <Button Style="{StaticResource BtnSecondary}" Content="← Back"
+                                        Click="OnBackHome" Padding="10,5" FontSize="12"/>
+                                <TextBlock Text="{Binding SelectedPeer.DisplayName}"
+                                           FontSize="17" FontWeight="Bold"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           VerticalAlignment="Center" Margin="14,0,0,0"/>
+                                <Border Background="{StaticResource BgInputBrush}"
+                                        CornerRadius="12" Padding="8,3" Margin="10,0,0,0"
+                                        VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding SelectedPeer.StatusLabel}"
+                                               FontSize="10.5" FontWeight="SemiBold"
+                                               Foreground="{Binding SelectedPeer.StatusClass,
+                                                   Converter={StaticResource PeerDotConv}}"/>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- Peer Info -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Text="ℹ️  Peer Info"/>
+                                    </Border>
+                                    <StackPanel Margin="16,10">
+                                        <DockPanel Margin="0,4">
+                                            <TextBlock Text="Peer ID" Width="100"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="{Binding SelectedPeer.PeerId}"
+                                                       FontFamily="Consolas" FontSize="11.5"
+                                                       Foreground="{StaticResource AccentBrush}"/>
+                                        </DockPanel>
+                                        <DockPanel Margin="0,4">
+                                            <TextBlock Text="Address" Width="100"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="{Binding SelectedPeer.AddressDisplay}"
+                                                       FontFamily="Consolas" FontSize="11.5"
+                                                       Foreground="{StaticResource AccentBrush}"/>
+                                        </DockPanel>
+                                        <DockPanel Margin="0,4">
+                                            <TextBlock Text="Fingerprint" Width="100"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="{Binding SelectedPeer.Fingerprint}"
+                                                       FontFamily="Consolas" FontSize="10"
+                                                       Foreground="{StaticResource AccentBrush}"
+                                                       TextWrapping="Wrap"/>
+                                        </DockPanel>
+                                        <DockPanel Margin="0,4">
+                                            <TextBlock Text="Trust" Width="100"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="12"/>
+                                            <TextBlock Text="{Binding SelectedPeer.TrustLabel}"
+                                                       FontSize="11.5"
+                                                       Foreground="{Binding SelectedPeer.StatusClass,
+                                                           Converter={StaticResource PeerDotConv}}"/>
+                                        </DockPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Actions -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Text="⚡  Actions"/>
+                                    </Border>
+                                    <WrapPanel Margin="16,12">
+                                        <Button Style="{StaticResource BtnPrimary}"
+                                                Content="🔐 Verify Peer" Margin="0,0,10,6"
+                                                Padding="16,10" Click="OnVerifyPeer"/>
+                                        <Button Style="{StaticResource BtnDanger}"
+                                                Content="🚫 Revoke Trust" Margin="0,0,10,6"
+                                                Padding="16,10" Click="OnRevokeTrust"/>
+                                    </WrapPanel>
+
+                                    <!-- Fingerprint verify input -->
+                                    <StackPanel Margin="16,0,16,14"
+                                                Visibility="{Binding IsVerifyInputVisible,
+                                                             Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="Paste the peer's fingerprint to confirm trust:"
+                                                   FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                                   Margin="0,0,0,6"/>
+                                        <DockPanel>
+                                            <Button Style="{StaticResource BtnSuccess}" Content="Confirm"
+                                                    DockPanel.Dock="Right" Margin="8,0,0,0"
+                                                    Click="OnConfirmFingerprint"/>
+                                            <TextBox x:Name="FingerprintInput" FontFamily="Consolas"
+                                                     FontSize="11" Padding="8,6"
+                                                     Background="{StaticResource BgInputBrush}"
+                                                     BorderBrush="{StaticResource AppBorderBrush}"
+                                                     BorderThickness="1"/>
+                                        </DockPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Request file from peer -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Text="📥  Request File from Peer"/>
+                                    </Border>
+                                    <DockPanel Margin="16,12,16,14">
+                                        <Button Style="{StaticResource BtnPrimary}" Content="Request"
+                                                DockPanel.Dock="Right" Margin="8,0,0,0"
+                                                Click="OnRequestFile"/>
+                                        <TextBox x:Name="RequestFilenameInput" FontSize="12"
+                                                 Padding="8,6" Background="{StaticResource BgInputBrush}"
+                                                 BorderBrush="{StaticResource AppBorderBrush}"
+                                                 BorderThickness="1"
+                                                 Tag="Enter filename to request…"/>
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Send File to Peer -->
+                            <Border Style="{StaticResource CardBorder}">
+                                <StackPanel>
+                                    <Border BorderBrush="{StaticResource AppBorderBrush}"
+                                            BorderThickness="0,0,0,1" Padding="16,12">
+                                        <TextBlock FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Text="📤  Send File to Peer"/>
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding SendableFiles}" Margin="10,6">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{StaticResource BgInputBrush}"
+                                                        BorderBrush="{StaticResource AppBorderBrush}"
+                                                        BorderThickness="1" CornerRadius="6"
+                                                        Padding="12,8" Margin="0,3">
+                                                    <DockPanel>
+                                                        <Button Style="{StaticResource BtnSmall}"
+                                                                Background="{StaticResource SuccessBrush}"
+                                                                Foreground="White" Content="↑ Send"
+                                                                DockPanel.Dock="Right"
+                                                                Click="OnSendFile"
+                                                                Tag="{Binding Filename}"/>
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="12.5" FontWeight="Medium"
+                                                                       Text="{Binding Filename}"/>
+                                                            <TextBlock FontFamily="Consolas" FontSize="10.5"
+                                                                       Foreground="{StaticResource TextMutedBrush}"
+                                                                       Text="{Binding SizeAndHash}"/>
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+        </DockPanel>
+
+        <!-- ════════════════════════════════════════════════════
+             LAYER 2 — Consent modal
+             ════════════════════════════════════════════════════ -->
+        <Grid Visibility="{Binding IsConsentModalOpen, Converter={StaticResource BoolToVis}}"
+              Panel.ZIndex="200">
+            <Border Background="#73000000" MouseDown="OnConsentBackdropClick"/>
+            <Border Background="{StaticResource BgCardBrush}" CornerRadius="10"
+                    Padding="28,24" MaxWidth="440" MinWidth="360"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="40" ShadowDepth="6"
+                                      Opacity="0.20" Color="Black"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="Incoming Request" FontSize="16" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10"/>
+                    <TextBlock TextWrapping="Wrap" FontSize="13"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,0,0,18" LineHeight="22">
+                        <Run FontWeight="Bold"
+                             Text="{Binding ActiveConsent.PeerName, Mode=OneWay}"/>
+                        <Run Text=" wants to transfer the file "/>
+                        <Run FontStyle="Italic"
+                             Text="{Binding ActiveConsent.Filename, Mode=OneWay}"/>
+                    </TextBlock>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Style="{StaticResource BtnPrimary}" Content="✓ Accept"
+                                Margin="0,0,8,0" Click="OnConsentAccept"/>
+                        <Button Style="{StaticResource BtnDanger}" Content="✕ Deny"
+                                Click="OnConsentDeny"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

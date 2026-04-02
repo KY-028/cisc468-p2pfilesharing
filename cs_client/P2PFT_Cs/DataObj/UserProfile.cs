@@ -39,6 +39,4 @@ namespace P2PFT_Cs.DataObj
         [DataMember(Name = "created_utc")]
         public string CreatedUtc { get; set; }
     }
-    [DataContract]
-    
 }
