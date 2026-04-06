@@ -253,7 +253,8 @@ class TestVaultPasswordChange:
         with open(vault_path, "rb") as f:
             old_blob = f.read()
 
-        change_vault_password("old-password-123", "new-password-456")
+        skipped = change_vault_password("old-password-123", "new-password-456")
+        assert skipped == []
 
         with open(vault_path, "rb") as f:
             new_blob = f.read()
@@ -330,8 +331,32 @@ class TestVaultPasswordChange:
 
         monkeypatch.setattr("app.storage.vault.vault_decrypt_data", fail_only_on_file_decrypt)
 
-        with pytest.raises(RuntimeError, match="corrupt or undecryptable"):
-            change_vault_password("correct-old-password", "new-password-111")
+        skipped = change_vault_password("correct-old-password", "new-password-111")
+        assert skipped == ["test_rekey_corrupt.txt.vault"]
+
+    def test_change_password_skips_only_undecryptable_and_preserves_decryptable_files(self, monkeypatch, tmp_path):
+        vault_dir = self._set_temp_vault_dir(monkeypatch, tmp_path)
+        initialize_vault("mix-old-password")
+        vault_store_file("test_good_a.txt", b"a")
+        vault_store_file("test_good_b.txt", b"b")
+        vault_store_file("test_bad.txt", b"bad")
+
+        bad_path = os.path.join(vault_dir, "test_bad.txt.vault")
+        with open(bad_path, "rb") as f:
+            bad_blob = bytearray(f.read())
+        bad_blob[20] ^= 0x01
+        with open(bad_path, "wb") as f:
+            f.write(bytes(bad_blob))
+
+        skipped = change_vault_password("mix-old-password", "mix-new-password")
+        assert skipped == ["test_bad.txt.vault"]
+
+        lock_vault()
+        unlock_vault("mix-new-password")
+        assert vault_retrieve_file("test_good_a.txt") == b"a"
+        assert vault_retrieve_file("test_good_b.txt") == b"b"
+        with pytest.raises(InvalidTag):
+            vault_retrieve_file("test_bad.txt")
 
 
 # ===================================================================

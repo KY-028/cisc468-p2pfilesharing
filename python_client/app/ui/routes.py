@@ -151,7 +151,7 @@ def vault_change_password():
         return jsonify({"ok": False, "error": "New password must be different from the current password."}), 400
 
     try:
-        change_vault_password(old_password, new_password)
+        skipped_files = change_vault_password(old_password, new_password)
     except InvalidTag:
         app_state.add_status("Vault key change failed: incorrect current password.", level="error")
         return jsonify({"ok": False, "error": "Current password is incorrect."}), 403
@@ -167,8 +167,21 @@ def vault_change_password():
         app_state.add_status("Vault key change failed due to an unexpected error.", level="error")
         return jsonify({"ok": False, "error": "Unexpected error while changing vault key."}), 500
 
+    if skipped_files:
+        app_state.add_status(
+            "Vault key updated with warnings. Some undecryptable files were skipped: "
+            + ", ".join(skipped_files[:5])
+            + ("..." if len(skipped_files) > 5 else ""),
+            level="warning"
+        )
+        return jsonify({
+            "ok": True,
+            "warning": "Some undecryptable vault files were skipped.",
+            "skipped_files": skipped_files,
+        })
+
     app_state.add_status("Vault key updated successfully.", level="success")
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "skipped_files": []})
 
 
 # ---------------------------------------------------------------------------
