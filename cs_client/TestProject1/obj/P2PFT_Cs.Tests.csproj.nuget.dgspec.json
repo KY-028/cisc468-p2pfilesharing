@@ -1,0 +1,95 @@
+{
+  "format": 1,
+  "restore": {
+    "G:\\files\\repos\\cs_client\\TestProject1\\P2PFT_Cs.Tests.csproj": {}
+  },
+  "projects": {
+    "G:\\files\\repos\\cs_client\\P2PFT_Cs\\P2PFT_Cs.csproj": {
+      "restore": {
+        "projectUniqueName": "G:\\files\\repos\\cs_client\\P2PFT_Cs\\P2PFT_Cs.csproj",
+        "projectName": "P2PFT_Cs",
+        "projectPath": "G:\\files\\repos\\cs_client\\P2PFT_Cs\\P2PFT_Cs.csproj",
+        "UsingMicrosoftNETSdk": false,
+        "frameworks": {
+          "net48": {
+            "projectReferences": {}
+          }
+        }
+      },
+      "frameworks": {
+        "net48": {}
+      }
+    },
+    "G:\\files\\repos\\cs_client\\TestProject1\\P2PFT_Cs.Tests.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "G:\\files\\repos\\cs_client\\TestProject1\\P2PFT_Cs.Tests.csproj",
+        "projectName": "P2PFT_Cs.Tests",
+        "projectPath": "G:\\files\\repos\\cs_client\\TestProject1\\P2PFT_Cs.Tests.csproj",
+        "packagesPath": "C:\\Users\\Alex\\.nuget\\packages\\",
+        "outputPath": "G:\\files\\repos\\cs_client\\TestProject1\\obj\\",
+        "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\Alex\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net48"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net48": {
+            "targetAlias": "net48",
+            "projectReferences": {
+              "G:\\files\\repos\\cs_client\\P2PFT_Cs\\P2PFT_Cs.csproj": {
+                "projectPath": "G:\\files\\repos\\cs_client\\P2PFT_Cs\\P2PFT_Cs.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net48": {
+          "targetAlias": "net48",
+          "dependencies": {
+            "MSTest.TestAdapter": {
+              "target": "Package",
+              "version": "[3.1.1, )"
+            },
+            "MSTest.TestFramework": {
+              "target": "Package",
+              "version": "[3.1.1, )"
+            },
+            "Microsoft.NET.Test.Sdk": {
+              "target": "Package",
+              "version": "[17.9.0, )"
+            },
+            "Portable.BouncyCastle": {
+              "target": "Package",
+              "version": "[1.9.0, )"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.312\\RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

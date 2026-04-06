@@ -15,7 +15,7 @@ using P2PFT_Cs.DataObj;
 
 namespace P2PFT_Cs.Utils
 {
-    /// <summary>
+
     /// Manages user identity creation, persistence, and loading.
     /// All cryptographic operations use Org.BouncyCastle for consistency.
     ///
@@ -28,7 +28,7 @@ namespace P2PFT_Cs.Utils
     ///
     /// On subsequent runs:
     ///   Decrypts the profile file with the user's password and loads the identity.
-    /// </summary>
+
     internal class AccountManager
     {
         private const int RsaKeySize = 2048;
@@ -48,14 +48,12 @@ namespace P2PFT_Cs.Utils
         private readonly string _password;
         private readonly string _profilePath;
 
-        /// <summary>
-        /// The loaded or newly created user profile. Available after <see cref="Initialize"/>.
-        /// </summary>
+
         public UserProfile Profile { get; private set; }
 
-        /// <summary>
-        /// The RSA key pair loaded from the profile. Available after <see cref="Initialize"/>.
-        /// </summary>
+
+        /// The RSA key pair loaded from the profile.
+
         public AsymmetricCipherKeyPair RsaKeyPair { get; private set; }
 
         /// <param name="userId">Unique user/peer identifier.</param>
@@ -73,9 +71,9 @@ namespace P2PFT_Cs.Utils
             _profilePath = profilePath ?? DefaultProfilePath;
         }
 
-        /// <summary>
+
         /// Loads an existing profile or creates a new one if none exists.
-        /// </summary>
+
         public void Initialize()
         {
             if (File.Exists(_profilePath))
@@ -88,10 +86,10 @@ namespace P2PFT_Cs.Utils
             }
         }
 
-        /// <summary>
+
         /// Returns the public key fingerprint (SHA-256 of DER-encoded public key, lowercase hex).
         /// For out-of-band verification between peers.
-        /// </summary>
+
         public string GetFingerprint()
         {
             if (Profile == null)
@@ -100,9 +98,9 @@ namespace P2PFT_Cs.Utils
             return Profile.Fingerprint;
         }
 
-        /// <summary>
+
         /// Exports the public key PEM for sharing with other peers.
-        /// </summary>
+
         public string GetPublicKeyPem()
         {
             if (Profile == null)
@@ -111,9 +109,9 @@ namespace P2PFT_Cs.Utils
             return Profile.PublicKeyPem;
         }
 
-        /// <summary>
+
         /// Updates the IP address and port in the profile and re-saves to disk.
-        /// </summary>
+
         public void UpdateNetworkInfo(string ipAddress, int port)
         {
             if (Profile == null)
@@ -124,9 +122,9 @@ namespace P2PFT_Cs.Utils
             SaveProfile();
         }
 
-        /// <summary>
+
         /// Re-encrypts the profile file with a new password and updates the stored hash.
-        /// </summary>
+
         public void ChangeVaultPassword(string newPassword)
         {
             if (Profile == null)
@@ -142,10 +140,9 @@ namespace P2PFT_Cs.Utils
             LocalFileCrypto.EncryptToFile(json, newPassword, _userId, _profilePath);
         }
 
-        /// <summary>
         /// Re-generates a fresh RSA-2048 key pair (key rotation) and saves the profile.
         /// Returns the new public key PEM for redistribution.
-        /// </summary>
+
         public string RotateKeys(out AsymmetricCipherKeyPair oldKeyPair)
         {
             if (Profile == null)
@@ -162,10 +159,10 @@ namespace P2PFT_Cs.Utils
             return Profile.PublicKeyPem;
         }
 
-        /// <summary>
+
         /// Computes the SHA-256 fingerprint of an arbitrary DER-encoded public key.
         /// Useful for verifying a remote peer's identity.
-        /// </summary>
+
         public static string ComputeFingerprintFromDer(byte[] derPublicKey)
         {
             if (derPublicKey == null || derPublicKey.Length == 0)
@@ -178,23 +175,22 @@ namespace P2PFT_Cs.Utils
             return BytesToHex(hash);
         }
 
-        // ── Profile creation ────────────────────────────────────
+        //Profile creation
 
         private void CreateProfile()
         {
-            // Ensure directory exists
+
             string dir = Path.GetDirectoryName(_profilePath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
-            // Generate RSA-2048 identity key pair
+
             RsaKeyPair = GenerateRsaKeyPair();
 
-            // Hash password for verification (never store plaintext)
+
             byte[] salt = GenerateRandom(PasswordSaltSize);
             string passwordHash = HashPassword(_password, salt);
 
-            // Detect local IP
             string localIp = GetLocalIpAddress();
 
             Profile = new UserProfile
@@ -213,31 +209,29 @@ namespace P2PFT_Cs.Utils
             SaveProfile();
         }
 
-        // ── Profile loading ─────────────────────────────────────
+        //Profile loading
 
         private void LoadProfile()
         {
-            // Verify file belongs to this user
+
             string fileUserId = LocalFileCrypto.ReadUserId(_profilePath);
             if (fileUserId != _userId)
                 throw new UnauthorizedAccessException(
                     $"Profile belongs to user '{fileUserId}', expected '{_userId}'.");
 
-            // Decrypt and deserialize
+
             byte[] json = LocalFileCrypto.DecryptFromFile(_profilePath, _password, _userId);
             Profile = DeserializeProfile(json);
 
-            // Verify password against stored hash
+
             byte[] salt = Convert.FromBase64String(Profile.PasswordSalt);
             string computedHash = HashPassword(_password, salt);
             if (computedHash != Profile.PasswordHash)
                 throw new UnauthorizedAccessException("Invalid password.");
-
-            // Restore RSA key pair from stored PEM
             RsaKeyPair = ImportPrivateKeyPem(Profile.PrivateKeyPem);
         }
 
-        // ── Profile persistence ─────────────────────────────────
+        //Profile persistence
 
         private void SaveProfile()
         {
@@ -245,7 +239,7 @@ namespace P2PFT_Cs.Utils
             LocalFileCrypto.EncryptToFile(json, _password, _userId, _profilePath);
         }
 
-        // ── RSA key generation (BouncyCastle) ───────────────────
+        //RSA key generation (BouncyCastle)
 
         private static AsymmetricCipherKeyPair GenerateRsaKeyPair()
         {
@@ -254,7 +248,7 @@ namespace P2PFT_Cs.Utils
             return generator.GenerateKeyPair();
         }
 
-        // ── RSA PEM export (BouncyCastle PemWriter) ─────────────
+        //RSA PEM export (BouncyCastle PemWriter)
 
         private static string ExportPublicKeyPem(AsymmetricCipherKeyPair keyPair)
         {
@@ -278,7 +272,7 @@ namespace P2PFT_Cs.Utils
             }
         }
 
-        // ── RSA PEM import (BouncyCastle PemReader) ─────────────
+        //RSA PEM import
 
         private static AsymmetricCipherKeyPair ImportPrivateKeyPem(string pem)
         {
@@ -300,9 +294,9 @@ namespace P2PFT_Cs.Utils
             }
         }
 
-        /// <summary>
+
         /// Computes the SHA-256 fingerprint from the DER-encoded SubjectPublicKeyInfo.
-        /// </summary>
+
         private static string ComputeFingerprint(AsymmetricCipherKeyPair keyPair)
         {
             var publicKeyInfo = SubjectPublicKeyInfoFactory.CreateSubjectPublicKeyInfo(keyPair.Public);
@@ -310,7 +304,7 @@ namespace P2PFT_Cs.Utils
             return ComputeFingerprintFromDer(derPublicKey);
         }
 
-        // ── Password hashing (BouncyCastle PBKDF2) ──────────────
+        // Password hashing
 
         private static string HashPassword(string password, byte[] salt)
         {
@@ -324,7 +318,7 @@ namespace P2PFT_Cs.Utils
             return Convert.ToBase64String(keyParam.GetKey());
         }
 
-        // ── JSON serialization (DataContractJsonSerializer) ─────
+        //JSON serialization
 
         private static byte[] SerializeProfile(UserProfile profile)
         {
@@ -345,7 +339,7 @@ namespace P2PFT_Cs.Utils
             }
         }
 
-        // ── Helpers ─────────────────────────────────────────────
+        // Helpers
 
         private static string GetLocalIpAddress()
         {
@@ -353,7 +347,7 @@ namespace P2PFT_Cs.Utils
             {
                 using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp))
                 {
-                    // Doesn't actually send data — just determines the local route
+
                     socket.Connect("8.8.8.8", 65530);
                     var endpoint = socket.LocalEndPoint as IPEndPoint;
                     return endpoint?.Address.ToString() ?? "127.0.0.1";

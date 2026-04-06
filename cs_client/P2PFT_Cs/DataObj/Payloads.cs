@@ -3,7 +3,7 @@ using System.Runtime.Serialization;
 
 namespace P2PFT_Cs.DataObj
 {
-    // ���� Base Payload (shared peer_id across all messages) ��������������
+    //Base Payload (shared peer_id across all messages)
 
     [DataContract]
     internal abstract class BasePayload
@@ -12,7 +12,7 @@ namespace P2PFT_Cs.DataObj
         public string PeerId { get; set; }
     }
 
-    // ���� Peer Discovery ������������������������������������������������������������������������������������
+    // Peer Discovery
 
     [DataContract]
     internal class PeerAnnouncePayload : BasePayload
@@ -52,7 +52,7 @@ namespace P2PFT_Cs.DataObj
         public List<PeerInfo> Peers { get; set; }
     }
 
-    // ���� Key Exchange ����������������������������������������������������������������������������������������
+    //Key Exchange
 
     [DataContract]
     internal class KeyExchangeInitPayload : BasePayload
@@ -84,7 +84,7 @@ namespace P2PFT_Cs.DataObj
         public string Signature { get; set; }
     }
 
-    // ���� File Operations ����������������������������������������������������������������������������������
+    //File Operations 
 
     [DataContract]
     internal class FileListRequestPayload : BasePayload
@@ -136,9 +136,9 @@ namespace P2PFT_Cs.DataObj
         [DataMember(Name = "file_hash", IsRequired = true)]
         public string FileHash { get; set; }
 
-        /// <summary>
+ 
         /// Base64-encoded AES-256-GCM encrypted file data.
-        /// </summary>
+
         [DataMember(Name = "data", IsRequired = true)]
         public string Data { get; set; }
 
@@ -149,7 +149,7 @@ namespace P2PFT_Cs.DataObj
         public string Hmac { get; set; }
     }
 
-    // ���� Consent ��������������������������������������������������������������������������������������������������
+    //Consent
 
     [DataContract]
     internal class ConsentRequestPayload : BasePayload
@@ -174,7 +174,7 @@ namespace P2PFT_Cs.DataObj
         public bool Approved { get; set; }
     }
 
-    // ���� Key Revocation ������������������������������������������������������������������������������������
+    //Key Revocation
 
     [DataContract]
     internal class RevokeKeyPayload : BasePayload
@@ -205,7 +205,7 @@ namespace P2PFT_Cs.DataObj
     }
 
 
-    // ���� Error ������������������������������������������������������������������������������������������������������
+    //Error
 
     [DataContract]
     internal class ErrorPayload : BasePayload

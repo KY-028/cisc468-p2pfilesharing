@@ -18,13 +18,13 @@ namespace P2PFT_Cs.Utils
     /// </summary>
     internal static class TransmissionCrypto
     {
-        // NIST SP 800-38D recommended nonce length for GCM
+
         private const int NonceSize = 12;
 
-        // 128-bit authentication tag
+
         private const int TagSize = 16;
 
-        // AES-256 key length
+
         private const int KeySize = 32;
 
         /// <summary>
@@ -44,7 +44,6 @@ namespace P2PFT_Cs.Utils
             byte[] nonce = GenerateNonce();
             byte[] aad = BuildAad(filename, sha256Hash);
 
-            // GCM output = ciphertext + appended tag
             byte[] output = new byte[plaintext.Length + TagSize];
 
             var cipher = new GcmBlockCipher(new AesEngine());
@@ -58,7 +57,7 @@ namespace P2PFT_Cs.Utils
             int len = cipher.ProcessBytes(plaintext, 0, plaintext.Length, output, 0);
             cipher.DoFinal(output, len);
 
-            // Wire format: [nonce | ciphertext | tag]
+
             byte[] blob = new byte[NonceSize + output.Length];
             Buffer.BlockCopy(nonce, 0, blob, 0, NonceSize);
             Buffer.BlockCopy(output, 0, blob, NonceSize, output.Length);
@@ -86,7 +85,7 @@ namespace P2PFT_Cs.Utils
             if (blob.Length < NonceSize + TagSize)
                 throw new CryptographicException("Blob is too short to contain a valid nonce and tag.");
 
-            // Extract nonce and ciphertext+tag
+
             byte[] nonce = new byte[NonceSize];
             Buffer.BlockCopy(blob, 0, nonce, 0, NonceSize);
 
@@ -96,7 +95,7 @@ namespace P2PFT_Cs.Utils
 
             byte[] aad = BuildAad(filename, sha256Hash);
 
-            // Plaintext is encrypted data minus the tag
+
             byte[] plaintext = new byte[encryptedLength - TagSize];
 
             var cipher = new GcmBlockCipher(new AesEngine());
@@ -108,7 +107,7 @@ namespace P2PFT_Cs.Utils
 
             cipher.Init(false, parameters);
             int len = cipher.ProcessBytes(encrypted, 0, encryptedLength, plaintext, 0);
-            cipher.DoFinal(plaintext, len);  // throws InvalidCipherTextException if tag is invalid
+            cipher.DoFinal(plaintext, len);  
 
             return plaintext;
         }

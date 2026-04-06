@@ -10,7 +10,7 @@ using Org.BouncyCastle.Security;
 
 namespace P2PFT_Cs.Utils
 {
-    /// <summary>
+
     /// Local at-rest file encryption using AES-256-GCM + PBKDF2 key derivation.
     /// Encrypts received files with a user password before storing to disk.
     ///
@@ -24,7 +24,7 @@ namespace P2PFT_Cs.Utils
     ///   [ ciphertext + 16-byte GCM tag ]
     ///
     /// PBKDF2: SHA-256, 600 000 iterations, 32-byte derived key.
-    /// </summary>
+
     internal static class LocalFileCrypto
     {
         private static readonly byte[] Magic = Encoding.ASCII.GetBytes("P2PF");
@@ -38,14 +38,7 @@ namespace P2PFT_Cs.Utils
 
         private static readonly SecureRandom SecureRng = new SecureRandom();
 
-        /// <summary>
-        /// Encrypts file data with the user's password and writes to the output path.
-        /// The userId is embedded in the file header for identification.
-        /// </summary>
-        /// <param name="plaintext">Raw file bytes to encrypt.</param>
-        /// <param name="password">User-supplied password for key derivation.</param>
-        /// <param name="userId">User identifier written into the file header.</param>
-        /// <param name="outputPath">Destination path for the encrypted file.</param>
+
         public static void EncryptToFile(byte[] plaintext, string password, string userId, string outputPath)
         {
             if (plaintext == null || plaintext.Length == 0)
@@ -82,17 +75,6 @@ namespace P2PFT_Cs.Utils
             }
         }
 
-        /// <summary>
-        /// Decrypts an encrypted file previously written by <see cref="EncryptToFile"/>.
-        /// Validates the header and userId before decryption.
-        /// </summary>
-        /// <param name="inputPath">Path to the encrypted file.</param>
-        /// <param name="password">User-supplied password for key derivation.</param>
-        /// <param name="expectedUserId">
-        /// Expected userId to match against the file header.
-        /// Pass null to skip the userId check and accept any owner.
-        /// </param>
-        /// <returns>Decrypted plaintext bytes.</returns>
         public static byte[] DecryptFromFile(string inputPath, string password, string expectedUserId)
         {
             if (string.IsNullOrEmpty(inputPath))
@@ -103,7 +85,7 @@ namespace P2PFT_Cs.Utils
             using (var fs = new FileStream(inputPath, FileMode.Open, FileAccess.Read))
             using (var br = new BinaryReader(fs))
             {
-                // ── Read & validate header ──
+        
                 byte[] magic = br.ReadBytes(Magic.Length);
                 if (!BytesEqual(magic, Magic))
                     throw new InvalidDataException("Invalid file: magic header mismatch.");
@@ -122,18 +104,17 @@ namespace P2PFT_Cs.Utils
                     throw new UnauthorizedAccessException(
                         $"File belongs to user '{fileUserId}', expected '{expectedUserId}'.");
 
-                // ── Read crypto parameters ──
                 byte[] salt = br.ReadBytes(SaltSize);
                 byte[] nonce = br.ReadBytes(NonceSize);
 
-                // ── Read encrypted payload (rest of file) ──
+
                 long remaining = fs.Length - fs.Position;
                 if (remaining < TagSize)
                     throw new InvalidDataException("File is too short to contain valid encrypted data.");
 
                 byte[] encrypted = br.ReadBytes((int)remaining);
 
-                // ── Derive key & decrypt ──
+
                 byte[] key = DeriveKey(password, salt);
                 try
                 {
@@ -146,9 +127,7 @@ namespace P2PFT_Cs.Utils
             }
         }
 
-        /// <summary>
-        /// Reads only the userId from an encrypted file header without decrypting.
-        /// </summary>
+
         public static string ReadUserId(string inputPath)
         {
             if (string.IsNullOrEmpty(inputPath))
@@ -161,7 +140,7 @@ namespace P2PFT_Cs.Utils
                 if (!BytesEqual(magic, Magic))
                     throw new InvalidDataException("Invalid file: magic header mismatch.");
 
-                br.ReadByte(); // version
+                br.ReadByte(); 
 
                 int userIdLength = br.ReadInt32();
                 if (userIdLength <= 0 || userIdLength > 1024)
@@ -171,7 +150,6 @@ namespace P2PFT_Cs.Utils
             }
         }
 
-        // ── AES-256-GCM via BouncyCastle ────────────────────────
 
         private static byte[] AesGcmEncrypt(byte[] key, byte[] nonce, byte[] plaintext)
         {
@@ -187,7 +165,7 @@ namespace P2PFT_Cs.Utils
             int len = cipher.ProcessBytes(plaintext, 0, plaintext.Length, output, 0);
             cipher.DoFinal(output, len);
 
-            return output; // ciphertext + tag
+            return output;
         }
 
         private static byte[] AesGcmDecrypt(byte[] key, byte[] nonce, byte[] ciphertextWithTag)
@@ -202,12 +180,12 @@ namespace P2PFT_Cs.Utils
 
             cipher.Init(false, parameters);
             int len = cipher.ProcessBytes(ciphertextWithTag, 0, ciphertextWithTag.Length, plaintext, 0);
-            cipher.DoFinal(plaintext, len); // throws if tag is invalid
+            cipher.DoFinal(plaintext, len); 
 
             return plaintext;
         }
 
-        // ── PBKDF2 key derivation (BouncyCastle) ────────────────
+
 
         private static byte[] DeriveKey(string password, byte[] salt)
         {
@@ -221,7 +199,6 @@ namespace P2PFT_Cs.Utils
             return keyParam.GetKey();
         }
 
-        // ── Helpers (BouncyCastle SecureRandom) ─────────────────
 
         private static byte[] GenerateRandom(int size)
         {

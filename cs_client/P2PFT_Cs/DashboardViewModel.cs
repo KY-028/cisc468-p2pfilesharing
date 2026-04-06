@@ -22,44 +22,43 @@ namespace P2PFT_Cs
     {
         private readonly DispatcherTimer _pollTimer;
 
-        // ���� Vault state ������������������������������������������������������������������������������������
+        //Vault state 
         private bool _isVaultUnlocked;
         private bool _isVaultInitialized;
         private string _vaultError;
 
-        // ���� Identity ������������������������������������������������������������������������������������������
+        //Identity
         private string _peerId;
         private string _fingerprint;
         private string _vaultPassword;
 
-        // ���� Peer detail ������������������������������������������������������������������������������������
+        // Peer detail
         private PeerViewModel _selectedPeer;
         private bool _isPeerViewActive;
 
-        // ���� Consent modal ��������������������������������������������������������������������������������
-        private bool _isConsentModalOpen;
+        //Consent modal 
         private FileTransfer.ConsentRecord _activeConsent;
 
-        // Notification
+        //Notification
         private bool _hasNotification;
         private string _notificationMessage;
         private string _notificationRequestId;
         private DispatcherTimer _notificationTimer;
 
-        // ���� Engine ����������������������������������������������������������������������������������������������
+        //Engine 
         private FileTransfer _fileTransfer;
         private AccountManager _account;
         private PeerDiscovery _discovery;
         private PeerValidation _validation;
         private ManifestStorage _manifests;
 
-        // ���� Paths ������������������������������������������������������������������������������������������������
+        //Paths
         private static readonly string SharedDir =
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "shared");
 
         private const int DefaultTcpPort = 9877;
 
-        // ���� Observable collections ��������������������������������������������������������������
+        //Observable collections
         public ObservableCollection<PeerViewModel> Peers { get; }
             = new ObservableCollection<PeerViewModel>();
         public ObservableCollection<SharedFileViewModel> SharedFiles { get; }
@@ -77,7 +76,7 @@ namespace P2PFT_Cs
         public ObservableCollection<PeerFileViewModel> PeerFiles { get; }
             = new ObservableCollection<PeerFileViewModel>();
 
-        // ���� Constructor ������������������������������������������������������������������������������������
+        // Constructor
 
         public DashboardViewModel()
         {
@@ -89,10 +88,8 @@ namespace P2PFT_Cs
             _pollTimer.Tick += (s, e) => RefreshFromEngine();
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Properties
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+        
         public string PeerId
         {
             get { return _peerId; }
@@ -239,10 +236,8 @@ namespace P2PFT_Cs
             catch (Exception ex) { return "Failed to change password: " + ex.Message; }
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Engine bootstrap
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+        
         private void InitialiseEngine(string userId, string password)
         {
             _fileTransfer = new FileTransfer(userId, password, userId);
@@ -292,10 +287,8 @@ namespace P2PFT_Cs
             _pollTimer.Start();
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Discovery events (background threads �� Dispatcher)
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+        
         private void OnPeerDiscovered(string peerId, string address, int port)
         {
             Application.Current?.Dispatcher?.BeginInvoke(new Action(() =>
@@ -420,7 +413,7 @@ namespace P2PFT_Cs
             });
         }
 
-        // ── Notification helpers ─────────────────────────────────
+        // Notification helpers
 
         public bool HasNotification
         {
@@ -508,10 +501,8 @@ namespace P2PFT_Cs
             catch { }
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-        //  Shared file management
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+      //  Shared file management
+       
         public void ScanSharedDirectory()
         {
             SharedFiles.Clear();
@@ -553,9 +544,9 @@ namespace P2PFT_Cs
             RefreshPeerDetailLists();
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
+     
         //  Peer actions
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
+      
 
         public void GoBackHome()
         {
@@ -639,10 +630,8 @@ namespace P2PFT_Cs
             RefreshFromEngine();
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Peer verification
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+       
         /// <summary>
         /// Initiates verification: generates the code on-demand if needed (like Python's /api/verify-peer).
         /// </summary>
@@ -772,10 +761,8 @@ namespace P2PFT_Cs
             }
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Consent
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+        
         public void ShowConsentModal(string requestId)
         {
             if (_fileTransfer == null) return;
@@ -806,10 +793,8 @@ namespace P2PFT_Cs
             RefreshFromEngine();
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Vault download
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+        
         public void DecryptVaultFile(string vaultFilename, string destinationPath)
         {
             string receivedDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "received");
@@ -818,10 +803,8 @@ namespace P2PFT_Cs
             File.WriteAllBytes(destinationPath, decrypted);
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Polling
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+        
         private void RefreshFromEngine()
         {
             if (_fileTransfer == null) return;
@@ -918,10 +901,8 @@ namespace P2PFT_Cs
             }
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Shutdown
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+       
         public void Shutdown()
         {
             _pollTimer.Stop();
@@ -932,10 +913,8 @@ namespace P2PFT_Cs
             }
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Helpers
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+       
         private bool CheckVaultInitialized()
         {
             string profilePath = Path.Combine(
@@ -953,10 +932,8 @@ namespace P2PFT_Cs
         }
     }
 
-    // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
     //  View-model items
-    // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+    
     internal class PeerViewModel : INotifyPropertyChanged
     {
         private string _address = "";

@@ -30,7 +30,9 @@ G:\files\repos\cs_client\P2PFT_Cs\bin\Debug\P2PFT_Cs.pdb
 G:\files\repos\cs_client\P2PFT_Cs\bin\Debug\BouncyCastle.Crypto.dll
 G:\files\repos\cs_client\P2PFT_Cs\bin\Debug\BouncyCastle.Crypto.xml
 G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\P2PFT_Cs.csproj.AssemblyReference.cache
+G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\ChangePasswordDialog.baml
 G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\MainWindow.g.cs
+G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\ChangePasswordDialog.g.cs
 G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\App.g.cs
 G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\GeneratedInternalTypeHelper.g.cs
 G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\P2PFT_Cs_MarkupCompile.cache
@@ -46,4 +48,3 @@ G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\P2PFT_Cs.application
 G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\P2PFT_Cs.csproj.Up2Date
 G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\P2PFT_Cs.exe
 G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\P2PFT_Cs.pdb
-G:\files\repos\cs_client\P2PFT_Cs\obj\Debug\P2PFT_Cs.exe.config

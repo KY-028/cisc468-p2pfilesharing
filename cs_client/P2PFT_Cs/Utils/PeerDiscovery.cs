@@ -27,12 +27,12 @@ namespace P2PFT_Cs
     /// </summary>
     internal class PeerDiscovery : IDisposable
     {
-        // ── Constants ──────────────────────────────────────────────
+        //Constants 
         private const int HeaderSize = 4;
         private const int MaxMessageSize = 64 * 1024 * 1024;
         private const int TcpReadTimeoutMs = 30000;
 
-        // ���� Identity ������������������������������������������������������������������������������������������
+        // Identity
         private readonly string _peerId;
         private readonly int _tcpPort;
         private readonly FileTransfer _fileTransfer;
@@ -40,7 +40,7 @@ namespace P2PFT_Cs
         private ManifestStorage _manifests;
         private Func<List<DataObj.FileInfo>> _getSharedFiles;
 
-        // ── Threads / sockets ──────────────────────────────────────
+        //Threads / sockets 
         private MdnsDiscovery _mdns;
         private TcpListener _tcpListener;
         private Thread _tcpListenThread;
@@ -57,7 +57,7 @@ namespace P2PFT_Cs
         /// </summary>
         public event Action<string> PeerOffline;
 
-        // ── Constructor ────────────────────────────────────────────
+        //Constructor
 
         public PeerDiscovery(string peerId, int tcpPort,
                              FileTransfer fileTransfer,
@@ -86,10 +86,8 @@ namespace P2PFT_Cs
             _getSharedFiles = callback;
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
         //  Start / Stop
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+        
         public void Start()
         {
             if (_running) return;
@@ -125,7 +123,7 @@ namespace P2PFT_Cs
             Stop();
         }
 
-        // ── mDNS event handlers ────────────────────────────────────
+        //mDNS event handlers
 
         private void OnMdnsPeerFound(string peerId, string address, int port)
         {
@@ -138,7 +136,7 @@ namespace P2PFT_Cs
             PeerOffline?.Invoke(peerId);
         }
 
-        // ── TCP listen (receive all protocol messages) ─────────────
+        //receive all protocol messages
 
         private void TcpListenLoop()
         {
@@ -191,7 +189,7 @@ namespace P2PFT_Cs
                 }
                 else if (messageType == MessageType.FileListRequest)
                 {
-                    // Same-socket: respond with our file list on this connection
+                    
                     var flReq = Deserialize<FileListRequestPayload>(payloadBuf);
                     if (flReq != null && _getSharedFiles != null)
                         _fileTransfer.HandleFileListRequest(
@@ -200,7 +198,7 @@ namespace P2PFT_Cs
                 }
                 else
                 {
-                    // All other messages: close socket, dispatch normally
+                    
                     client.Close();
                     DispatchMessage(messageType, payloadBuf, senderAddress);
                 }
@@ -211,10 +209,8 @@ namespace P2PFT_Cs
             }
         }
 
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-        //  Message dispatch
-        // �T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T�T
-
+         //  Message dispatch
+      
         private void DispatchMessage(string type, byte[] payload, string senderAddress)
         {
             switch (type)
@@ -249,7 +245,7 @@ namespace P2PFT_Cs
                     break;
 
                 case MessageType.KeyExchangeInit:
-                    // Handled directly in HandleTcpClient (same-socket handshake)
+
                     break;
 
                 case MessageType.VerifyConfirm:
@@ -277,11 +273,11 @@ namespace P2PFT_Cs
                     break;
 
                 case MessageType.PeerAnnounce:
-                    break; // Handled by mDNS
+                    break; 
             }
         }
 
-        // ── JSON field extraction (lightweight, no full parse) ─────
+        //JSON field extraction
 
         /// <summary>
         /// Extracts a string value for a given key from a JSON string.
@@ -323,7 +319,7 @@ namespace P2PFT_Cs
             return -1;
         }
 
-        // ── Helpers ────────────────────────────────────────────────
+        // Helpers
 
         private FileTransfer.LocalFileInfo LookupLocalFile(string filename, string hash)
         {

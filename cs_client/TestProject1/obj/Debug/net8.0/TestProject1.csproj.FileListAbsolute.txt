@@ -1,0 +1,6 @@
+G:\files\repos\cs_client\TestProject1\obj\Debug\net8.0\TestProject1.csproj.AssemblyReference.cache
+G:\files\repos\cs_client\TestProject1\obj\Debug\net8.0\TestProject1.GeneratedMSBuildEditorConfig.editorconfig
+G:\files\repos\cs_client\TestProject1\obj\Debug\net8.0\TestProject1.AssemblyInfoInputs.cache
+G:\files\repos\cs_client\TestProject1\obj\Debug\net8.0\TestProject1.AssemblyInfo.cs
+G:\files\repos\cs_client\TestProject1\obj\Debug\net8.0\TestProject1.csproj.CoreCompileInputs.cache
+G:\files\repos\cs_client\TestProject1\obj\Debug\net8.0\TestProject1.sourcelink.json

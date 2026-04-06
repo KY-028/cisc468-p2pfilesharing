@@ -25,9 +25,9 @@ namespace P2PFT_Cs.DataObj
             Timestamp = (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
         }
 
-        /// <summary>
+ 
         /// Validates that all required fields are present and well-formed.
-        /// </summary>
+
         public virtual void Validate()
         {
             if (string.IsNullOrWhiteSpace(Version))

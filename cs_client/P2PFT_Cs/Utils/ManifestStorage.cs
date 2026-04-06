@@ -7,12 +7,7 @@ using FileInfo = P2PFT_Cs.DataObj.FileInfo;
 
 namespace P2PFT_Cs.Utils
 {
-    /// <summary>
-    /// Persistent storage for peer file manifests (file lists received
-    /// via FILE_LIST_RESPONSE). Compatible with Python client's
-    /// manifests.py — stores one JSON file per peer in a manifests/
-    /// subdirectory.
-    /// </summary>
+ 
     internal class ManifestStorage
     {
         private readonly string _manifestDir;

@@ -28,16 +28,16 @@ namespace P2PFT_Cs
     /// </summary>
     internal class FileTransfer
     {
-        // ── Wire protocol constants (must match transport.py) ────────
+        //Wire protocol constants
         private const int HeaderSize = 4; // 4-byte big-endian length prefix
         private const int MaxMessageSize = 64 * 1024 * 1024; // 64 MB
         private const int DefaultTimeout = 10_000; // milliseconds
 
-        // ── Received-files directory ─────────────────────────────────
+        //Received-files directory
         private static readonly string ReceivedDir =
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "received");
 
-        // ── Identity & state ─────────────────────────────────────────
+        //Identity & state
         private readonly string _peerId;
         private string _password;
         private readonly string _userId;
@@ -95,7 +95,7 @@ namespace P2PFT_Cs
         /// </summary>
         public event Action<string> HandshakeNeeded;
 
-        // ── Constructor ──────────────────────────────────────────────
+        //Constructor
 
         /// <param name="peerId">This peer's unique identifier.</param>
         /// <param name="password">Password used for at-rest encryption via PBKDF2.</param>
@@ -114,7 +114,7 @@ namespace P2PFT_Cs
             _userId = userId;
         }
 
-        // ── Peer management ──────────────────────────────────────────
+        //Peer management
 
         /// <summary>Registers or updates a known peer.</summary>
         public void RegisterPeer(string peerId, string address, int port,
@@ -149,9 +149,9 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
+        
         //  File list exchange
-        // ================================================================
+        
 
         /// <summary>
         /// Opens a TCP connection to a peer, sends FILE_LIST_REQUEST,
@@ -277,7 +277,7 @@ namespace P2PFT_Cs
                       " (" + response.Files.Count + " files)", "info");
         }
 
-        // ── File list helpers ────────────────────────────────────────
+        // File list helpers
 
         private static byte[] ReadExactly(NetworkStream stream, int count)
         {
@@ -300,9 +300,9 @@ namespace P2PFT_Cs
             return BitConverter.ToInt32(buf, 0);
         }
 
-        // ================================================================
+
         //  Outgoing: we initiate
-        // ================================================================
+
 
         /// <summary>
         /// Sends a FILE_REQUEST to a peer asking for a specific file.
@@ -466,9 +466,9 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
+
         //  Incoming message handlers
-        // ================================================================
+
 
         /// <summary>
         /// Handles an incoming FILE_REQUEST: creates a consent prompt for the
@@ -721,9 +721,8 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
         //  Consent resolution (user clicks accept / deny in UI)
-        // ================================================================
+ 
 
         /// <summary>
         /// Called when the local user approves a consent request.
@@ -829,9 +828,9 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
+      
         //  Accessors (for UI / tests)
-        // ================================================================
+      
 
         /// <summary>Returns a snapshot of all pending consent requests.</summary>
         public IReadOnlyList<ConsentRecord> GetPendingConsents()
@@ -857,9 +856,8 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
         //  Private helpers
-        // ================================================================
+     
 
         /// <summary>
         /// Checks whether the user already gave consent to receive this file
@@ -991,7 +989,7 @@ namespace P2PFT_Cs
             }
         }
 
-        // ── Wire-level send (4-byte length prefix + JSON) ────────────
+
 
         /// <summary>
         /// Serializes a message to JSON, prepends a 4-byte big-endian length
@@ -1028,7 +1026,7 @@ namespace P2PFT_Cs
             }
         }
 
-        // ── Broadcast ─────────────────────────────────────────────────
+    
 
         /// <summary>
         /// Sends a message to all online peers (used for REVOKE_KEY broadcast).
@@ -1079,7 +1077,7 @@ namespace P2PFT_Cs
             _password = newPassword;
         }
 
-        // ── Helpers ──────────────────────────────────────────────────
+        //Helpers
 
         private static string GetReceivedDir()
         {
@@ -1110,9 +1108,9 @@ namespace P2PFT_Cs
             return (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
         }
 
-        // ================================================================
+      
         //  Internal data types
-        // ================================================================
+      
 
         internal class PeerEndpoint
         {

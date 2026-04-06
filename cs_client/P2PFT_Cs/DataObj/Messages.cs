@@ -2,7 +2,7 @@
 
 namespace P2PFT_Cs.DataObj
 {
-    // ���� Peer Discovery ������������������������������������������������������������������������������������
+    //Peer Discovery
 
     [DataContract]
     internal class PeerAnnounceMessage : jsonBody<PeerAnnouncePayload>
@@ -25,7 +25,7 @@ namespace P2PFT_Cs.DataObj
             : base("PEER_LIST_RESPONSE", payload) { }
     }
 
-    // ���� Key Exchange ����������������������������������������������������������������������������������������
+    //Key Exchange
 
     [DataContract]
     internal class KeyExchangeInitMessage : jsonBody<KeyExchangeInitPayload>
@@ -48,7 +48,7 @@ namespace P2PFT_Cs.DataObj
             : base("KEY_EXCHANGE_CONFIRM", payload) { }
     }
 
-    // ���� File Operations ����������������������������������������������������������������������������������
+    //File Operations
 
     [DataContract]
     internal class FileListRequestMessage : jsonBody<FileListRequestPayload>
@@ -78,7 +78,7 @@ namespace P2PFT_Cs.DataObj
             : base("FILE_SEND", payload) { }
     }
 
-    // ���� Consent ��������������������������������������������������������������������������������������������������
+    //Consent
 
     [DataContract]
     internal class ConsentRequestMessage : jsonBody<ConsentRequestPayload>
@@ -94,7 +94,7 @@ namespace P2PFT_Cs.DataObj
             : base("CONSENT_RESPONSE", payload) { }
     }
 
-    // ���� Key Revocation ������������������������������������������������������������������������������������
+    //Key Revocation
 
     [DataContract]
     internal class RevokeKeyMessage : jsonBody<RevokeKeyPayload>
@@ -119,7 +119,7 @@ namespace P2PFT_Cs.DataObj
             : base("VERIFY_REJECT", payload) { }
     }
 
-    // ���� Error ������������������������������������������������������������������������������������������������������
+    //Error
 
     [DataContract]
     internal class ErrorMessage : jsonBody<ErrorPayload>

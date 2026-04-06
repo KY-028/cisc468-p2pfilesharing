@@ -10,17 +10,17 @@ using System.Threading;
 
 namespace P2PFT_Cs
 {
-    /// <summary>
+
     /// Minimal mDNS/DNS-SD implementation for peer discovery.
     /// Advertises and browses for <c>_p2pshare._tcp.local.</c> services,
     /// compatible with the Python client's zeroconf-based discovery.
     ///
     /// Uses raw UDP sockets on the standard mDNS multicast group
-    /// 224.0.0.251:5353. No NuGet dependencies required.
-    /// </summary>
+    /// 224.0.0.251:5353.
+
     internal sealed class MdnsDiscovery : IDisposable
     {
-        // ── Constants ──────────────────────────────────────────────
+        //Constants
         private static readonly IPAddress MdnsMulticast = IPAddress.Parse("224.0.0.251");
         private const int MdnsPort = 5353;
         private const string ServiceType = "_p2pshare._tcp.local.";
@@ -41,20 +41,20 @@ namespace P2PFT_Cs
         // DNS flags
         private const ushort FlagResponse = 0x8400; // QR=1, AA=1
 
-        // ── Identity ───────────────────────────────────────────────
+        //Identity
         private readonly string _peerId;
         private readonly int _tcpPort;
         private readonly string _serviceName;   // "{peerId}._p2pshare._tcp.local."
         private readonly string _hostName;       // "{peerId}.local."
 
-        // ── Threads / sockets ──────────────────────────────────────
+        // Threads / sockets
         private Socket _socket;
         private Thread _receiveThread;
         private Thread _announceThread;
         private Thread _reapThread;
         private volatile bool _running;
 
-        // ── Discovered peers ───────────────────────────────────────
+        //Discovered peers
         private readonly ConcurrentDictionary<string, PeerRecord> _peers =
             new ConcurrentDictionary<string, PeerRecord>();
 
@@ -65,18 +65,13 @@ namespace P2PFT_Cs
             public double LastSeen;
         }
 
-        /// <summary>
-        /// Raised when a new peer is discovered.
-        /// Parameters: peerId, address, port.
-        /// </summary>
+
         public event Action<string, string, int> PeerFound;
 
-        /// <summary>
-        /// Raised when a peer has not been seen within the timeout.
-        /// </summary>
+
         public event Action<string> PeerLost;
 
-        // ── Constructor ────────────────────────────────────────────
+        //Constructor
         public MdnsDiscovery(string peerId, int tcpPort)
         {
             _peerId = peerId;
@@ -85,7 +80,7 @@ namespace P2PFT_Cs
             _hostName = peerId + ".local.";
         }
 
-        // ── Start / Stop ───────────────────────────────────────────
+        //Start / Stop
         public void Start()
         {
             if (_running) return;
@@ -98,7 +93,7 @@ namespace P2PFT_Cs
             _socket.ExclusiveAddressUse = false;
             _socket.Bind(new IPEndPoint(IPAddress.Any, MdnsPort));
 
-            // Join multicast group on all interfaces
+
             try
             {
                 _socket.SetSocketOption(SocketOptionLevel.IP,
@@ -107,7 +102,7 @@ namespace P2PFT_Cs
             }
             catch { /* may fail if already joined */ }
 
-            // Also join on each specific interface for reliability
+
             try
             {
                 foreach (var iface in NetworkInterface.GetAllNetworkInterfaces())
@@ -131,7 +126,7 @@ namespace P2PFT_Cs
             }
             catch { }
 
-            // Set multicast TTL
+
             _socket.SetSocketOption(SocketOptionLevel.IP,
                 SocketOptionName.MulticastTimeToLive, 255);
 
@@ -153,7 +148,7 @@ namespace P2PFT_Cs
             if (!_running) return;
             _running = false;
 
-            // Send goodbye (TTL=0)
+
             try
             {
                 byte[] goodbye = BuildAnnouncement(0);
@@ -173,10 +168,10 @@ namespace P2PFT_Cs
             Stop();
         }
 
-        // ── Announce loop ──────────────────────────────────────────
+        //Announce loop
         private void AnnounceLoop()
         {
-            // Initial burst: send 3 announcements quickly
+           
             for (int i = 0; i < 3 && _running; i++)
             {
                 try
@@ -188,7 +183,6 @@ namespace P2PFT_Cs
                 Thread.Sleep(1000);
             }
 
-            // Then announce periodically
             while (_running)
             {
                 Thread.Sleep(AnnounceIntervalMs);
@@ -199,7 +193,7 @@ namespace P2PFT_Cs
                     byte[] packet = BuildAnnouncement(DefaultTtl);
                     SendMulticast(packet);
 
-                    // Also send a browse query to discover new peers
+                  
                     byte[] query = BuildQuery();
                     SendMulticast(query);
                 }
@@ -208,7 +202,7 @@ namespace P2PFT_Cs
             }
         }
 
-        // ── Receive loop ───────────────────────────────────────────
+        //Receive loop
         private void ReceiveLoop()
         {
             byte[] buffer = new byte[9000]; // typical mDNS max
@@ -230,7 +224,7 @@ namespace P2PFT_Cs
             }
         }
 
-        // ── Reap loop ──────────────────────────────────────────────
+        // Reap loop
         private void ReapLoop()
         {
             while (_running)
@@ -254,17 +248,17 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
-        //  DNS WIRE FORMAT — PACKET BUILDING
-        // ================================================================
 
-        /// <summary>
+        //  DNS WIRE FORMAT — PACKET BUILDING
+        //
+
+     
         /// Builds an mDNS announcement (response) containing:
         ///   Answer: PTR  _p2pshare._tcp.local. → {peerId}._p2pshare._tcp.local.
         ///   Additional: SRV {peerId}._p2pshare._tcp.local. → {peerId}.local. port
         ///   Additional: TXT {peerId}._p2pshare._tcp.local. → "peer_id={peerId}"
         ///   Additional: A   {peerId}.local. → {localIP}
-        /// </summary>
+   
         private byte[] BuildAnnouncement(int ttl)
         {
             var packet = new List<byte>();
@@ -324,9 +318,9 @@ namespace P2PFT_Cs
             return packet.ToArray();
         }
 
-        /// <summary>
+
         /// Builds an mDNS query for PTR records of _p2pshare._tcp.local.
-        /// </summary>
+
         private byte[] BuildQuery()
         {
             var packet = new List<byte>();
@@ -339,7 +333,7 @@ namespace P2PFT_Cs
             packet.AddRange(ToBytes((ushort)0));            // Authority
             packet.AddRange(ToBytes((ushort)0));            // Additional
 
-            // Question: _p2pshare._tcp.local. PTR IN
+
             packet.AddRange(EncodeName(ServiceType));
             packet.AddRange(ToBytes(TypePTR));
             packet.AddRange(ToBytes(ClassIN));
@@ -347,9 +341,9 @@ namespace P2PFT_Cs
             return packet.ToArray();
         }
 
-        // ================================================================
+
         //  DNS WIRE FORMAT — PACKET PARSING
-        // ================================================================
+
 
         private void ParsePacket(byte[] data, int length, string senderAddr)
         {
@@ -432,8 +426,6 @@ namespace P2PFT_Cs
                     case TypeSRV:
                         if (rdLen >= 6)
                         {
-                            // ushort priority = ReadUInt16(data, offset);
-                            // ushort weight = ReadUInt16(data, offset + 2);
                             ushort port = ReadUInt16(data, offset + 4);
                             int hostOffset = offset + 6;
                             string host = ReadName(data, ref hostOffset, length);
@@ -462,14 +454,13 @@ namespace P2PFT_Cs
                 offset = rdEnd;
             }
 
-            // Process discovered services
             foreach (string ptrTarget in ptrTargets)
             {
                 string peerId = ExtractPeerIdFromServiceName(ptrTarget);
                 if (string.IsNullOrEmpty(peerId)) continue;
-                if (peerId == _peerId) continue; // ignore self
+                if (peerId == _peerId) continue; 
 
-                // Try to get peer_id from TXT record first
+
                 string txtPeerId;
                 if (txtRecords.TryGetValue(ptrTarget, out txtPeerId) &&
                     !string.IsNullOrEmpty(txtPeerId))
@@ -486,7 +477,7 @@ namespace P2PFT_Cs
                     continue;
                 }
 
-                // Get address + port
+
                 string address = senderAddr;
                 int port = 0;
 
@@ -494,7 +485,6 @@ namespace P2PFT_Cs
                 if (srvRecords.TryGetValue(ptrTarget, out srv))
                 {
                     port = srv.Port;
-                    // Try to resolve host from A records
                     string resolvedIp;
                     if (aRecords.TryGetValue(srv.Host, out resolvedIp))
                         address = resolvedIp;
@@ -523,14 +513,9 @@ namespace P2PFT_Cs
             public int Port;
         }
 
-        // ================================================================
-        //  DNS WIRE FORMAT — ENCODING
-        // ================================================================
 
-        /// <summary>
-        /// Encodes a DNS name into wire format (label-length encoding).
-        /// Example: "_p2pshare._tcp.local." → [10]_p2pshare[4]_tcp[5]local[0]
-        /// </summary>
+        //  DNS WIRE FORMAT — ENCODING
+
         private static byte[] EncodeName(string name)
         {
             var result = new List<byte>();
@@ -551,9 +536,7 @@ namespace P2PFT_Cs
             return result.ToArray();
         }
 
-        /// <summary>
-        /// Encodes a TXT record entry. Format: length-prefixed string.
-        /// </summary>
+
         private static byte[] EncodeTxtEntry(string entry)
         {
             byte[] entryBytes = Encoding.UTF8.GetBytes(entry);
@@ -565,17 +548,17 @@ namespace P2PFT_Cs
             return result;
         }
 
-        // ================================================================
-        //  DNS WIRE FORMAT — DECODING
-        // ================================================================
 
-        /// <summary>
+        //  DNS WIRE FORMAT — DECODING
+
+
+
         /// Reads a DNS name from the packet, handling pointer compression.
-        /// </summary>
+
         private static string ReadName(byte[] data, ref int offset, int length)
         {
             var parts = new List<string>();
-            int maxJumps = 64; // prevent infinite loops
+            int maxJumps = 64; 
             int jumps = 0;
             bool jumped = false;
             int savedOffset = -1;
@@ -591,7 +574,7 @@ namespace P2PFT_Cs
 
                 if ((b & 0xC0) == 0xC0)
                 {
-                    // Pointer
+
                     if (offset + 1 >= length) break;
                     int pointer = ((b & 0x3F) << 8) | data[offset + 1];
                     if (!jumped)
@@ -602,7 +585,7 @@ namespace P2PFT_Cs
                     continue;
                 }
 
-                // Regular label
+
                 int labelLen = b;
                 offset++;
                 if (offset + labelLen > length) break;
@@ -616,9 +599,6 @@ namespace P2PFT_Cs
             return string.Join(".", parts) + ".";
         }
 
-        /// <summary>
-        /// Skips a DNS name without building the string.
-        /// </summary>
         private static void SkipName(byte[] data, ref int offset, int length)
         {
             while (offset < length)
@@ -630,10 +610,10 @@ namespace P2PFT_Cs
             }
         }
 
-        /// <summary>
+
         /// Parses the TXT record data to extract peer_id value.
         /// TXT format: one or more length-prefixed strings, each "key=value".
-        /// </summary>
+
         private static string ParseTxt(byte[] data, int offset, int rdLen)
         {
             int end = offset + rdLen;
@@ -653,9 +633,9 @@ namespace P2PFT_Cs
             return null;
         }
 
-        // ================================================================
+
         //  HELPERS
-        // ================================================================
+
 
         private static string ExtractPeerIdFromServiceName(string serviceName)
         {

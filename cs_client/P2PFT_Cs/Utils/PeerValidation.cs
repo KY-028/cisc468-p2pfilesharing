@@ -41,7 +41,7 @@ namespace P2PFT_Cs
     /// </summary>
     internal class PeerValidation
     {
-        // ── Persistence path ────────────────────────────────────
+
         private static readonly string StoreDir =
             Path.Combine(Environment.GetFolderPath(
                 Environment.SpecialFolder.LocalApplicationData), "P2PFT");
@@ -49,11 +49,11 @@ namespace P2PFT_Cs
         private static readonly string StorePath =
             Path.Combine(StoreDir, "trusted_peers.json");
 
-        // ── Wire protocol constants ─────────────────────────────
+
         private const int HeaderSize = 4;
         private const int MaxMessageSize = 64 * 1024 * 1024;
 
-        // ── EC curve ────────────────────────────────────────────
+
         private static readonly X9ECParameters EcCurveParams =
             ECNamedCurveTable.GetByName("secp256r1");
         private static readonly ECDomainParameters EcDomain =
@@ -64,16 +64,15 @@ namespace P2PFT_Cs
 
         private static readonly SecureRandom SecureRng = new SecureRandom();
 
-        // ── Identity ────────────────────────────────────────────
+
         private readonly string _peerId;
         private readonly AccountManager _account;
         private readonly FileTransfer _fileTransfer;
 
-        // ── In-memory peer records ──────────────────────────────
         private readonly ConcurrentDictionary<string, PeerRecord> _peers =
             new ConcurrentDictionary<string, PeerRecord>();
 
-        // ── Mutual verification tracking ────────────────────────
+
         private readonly ConcurrentDictionary<string, bool> _verifyConfirmedByMe =
             new ConcurrentDictionary<string, bool>();
         private readonly ConcurrentDictionary<string, bool> _verifyConfirmedByPeer =
@@ -95,7 +94,7 @@ namespace P2PFT_Cs
         /// </summary>
         public event Action<string, string> VerificationRequired;
 
-        // ── Constructor ─────────────────────────────────────────
+        //Constructor
 
         public PeerValidation(string peerId, AccountManager account,
                               FileTransfer fileTransfer)
@@ -110,9 +109,9 @@ namespace P2PFT_Cs
             Load();
         }
 
-        // ================================================================
+
         //  Public API -- query & mutate peer trust
-        // ================================================================
+
 
         public bool IsTrusted(string peerId)
         {
@@ -157,7 +156,7 @@ namespace P2PFT_Cs
                                 StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            // Preserve trust if the peer already exists with the same key
+ 
             PeerRecord existing;
             bool preserveTrust = _peers.TryGetValue(peerId, out existing)
                                  && existing.Trusted
@@ -207,9 +206,9 @@ namespace P2PFT_Cs
                 Save();
         }
 
-        // ================================================================
+
         //  Fingerprint verification
-        // ================================================================
+
 
         public bool VerifyFingerprint(string peerId, string claimedFingerprint)
         {
@@ -269,9 +268,9 @@ namespace P2PFT_Cs
             return string.Join(" ", groups);
         }
 
-        // ================================================================
-        //  STS Key Exchange -- INITIATOR
-        // ================================================================
+
+        //  STS Key Exchange
+
 
         /// <summary>
         /// Perform a full STS handshake as the INITIATOR.
@@ -365,9 +364,9 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
+
         //  STS Key Exchange -- RESPONDER (same-socket)
-        // ================================================================
+
 
         /// <summary>
         /// Handles an incoming KEY_EXCHANGE_INIT as the RESPONDER.
@@ -461,9 +460,9 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
+
         //  Verification Confirm / Reject
-        // ================================================================
+
 
         /// <summary>
         /// Called when the local user confirms the verification code.
@@ -473,10 +472,10 @@ namespace P2PFT_Cs
         {
             _verifyConfirmedByMe[peerId] = true;
 
-            // Send VERIFY_CONFIRM to peer
+
             SendVerifyMessage(peerId, address, port, isConfirm: true);
 
-            // Check if peer already confirmed
+
             bool peerConfirmed;
             if (_verifyConfirmedByPeer.TryGetValue(peerId, out peerConfirmed) && peerConfirmed)
             {
@@ -527,9 +526,9 @@ namespace P2PFT_Cs
             ConfirmTrust(peerId);
         }
 
-        // ================================================================
+
         //  Key Revocation
-        // ================================================================
+
 
         public void HandleKeyRevocation(RevokeKeyPayload payload)
         {
@@ -542,7 +541,7 @@ namespace P2PFT_Cs
             PeerRecord rec;
             if (!_peers.TryGetValue(remotePeerId, out rec)) return;
 
-            // Verify cross-signature: the old key must have signed the new public key PEM
+    
             if (!string.IsNullOrEmpty(crossSigBase64) && !string.IsNullOrEmpty(rec.PublicKeyPem))
             {
                 try
@@ -553,18 +552,18 @@ namespace P2PFT_Cs
 
                     if (!RsaPssVerify(oldPubKey, newPubKeyBytes, crossSigBytes))
                     {
-                        // SECURITY: cross-signature invalid — reject revocation
+  
                         return;
                     }
                 }
                 catch
                 {
-                    return; // Malformed signature — reject
+                    return; 
                 }
             }
             else
             {
-                // No cross-signature provided — reject for security
+
                 return;
             }
 
@@ -599,9 +598,9 @@ namespace P2PFT_Cs
             return Convert.ToBase64String(signature);
         }
 
-        // ================================================================
+
         //  Persistence -- JSON file
-        // ================================================================
+
 
         private void Save()
         {
@@ -648,9 +647,9 @@ namespace P2PFT_Cs
             catch { /* file corrupted -- start fresh */ }
         }
 
-        // ================================================================
+
         //  ECDH P-256 helpers
-        // ================================================================
+
 
         private static AsymmetricCipherKeyPair GenerateEcdhKeyPair()
         {
@@ -703,9 +702,9 @@ namespace P2PFT_Cs
             return padded;
         }
 
-        // ================================================================
+
         //  RSA-PSS signing / verification
-        // ================================================================
+
 
         /// <summary>
         /// Compute the PSS MAX_LENGTH salt for an RSA key.
@@ -753,9 +752,9 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
+
         //  HKDF-SHA256 key derivation
-        // ================================================================
+
 
         /// <summary>
         /// Derive a 32-byte session key from an ECDH shared secret using
@@ -772,9 +771,9 @@ namespace P2PFT_Cs
             return output;
         }
 
-        // ================================================================
+
         //  Fingerprint helpers
-        // ================================================================
+
 
         /// <summary>
         /// Computes SHA-256(DER SubjectPublicKeyInfo) from a PEM string.
@@ -810,9 +809,9 @@ namespace P2PFT_Cs
             }
         }
 
-        // ================================================================
+
         //  Wire protocol helpers (length-prefixed JSON)
-        // ================================================================
+
 
         private static void WriteMessage<TPayload>(NetworkStream stream,
                                                     jsonBody<TPayload> message)
@@ -903,9 +902,9 @@ namespace P2PFT_Cs
             catch { /* best effort */ }
         }
 
-        // ================================================================
+
         //  JSON field extraction (lightweight, no full parse)
-        // ================================================================
+
 
         private static string ExtractJsonString(string json, string key)
         {
@@ -931,9 +930,9 @@ namespace P2PFT_Cs
             return ExtractJsonString(payloadSection, key);
         }
 
-        // ================================================================
+
         //  General helpers
-        // ================================================================
+
 
         private static byte[] ConcatBytes(byte[] a, byte[] b)
         {
@@ -959,9 +958,8 @@ namespace P2PFT_Cs
                 VerificationRequired?.Invoke(peerId, code);
         }
 
-        // ================================================================
         //  Data types
-        // ================================================================
+
 
         [DataContract]
         internal class PeerRecord
