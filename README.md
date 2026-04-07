@@ -34,6 +34,7 @@ python -m app.main
 
 C#
 Extract Cs_Client_ready_to_run.rar, run setup.exe
+
 ## Running Tests
 
 ```bash
@@ -43,4 +44,4 @@ pytest app/tests/ -v
 
 ## C# Client
 
-Usually you would have to build the C# client from source located in the `cs_client/P2PFT_Cs` directory, but for convenience, we have included a pre-built executable in the `cs_client` directory. To run the C# client, simply navigate to the `cs_client` directory and execute the `.exe` file directly.
+Usually you would have to build the C# client from source located in the `cs_client/P2PFT_Cs` directory, but for convenience, we have included a pre-built executable in the `cs_client` directory. To run the C# client, simply navigate to the `cs_client` directory and execute the `.rar` file directly, which will install the application and show the GUI.
