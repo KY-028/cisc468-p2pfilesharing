@@ -39,67 +39,6 @@ cd python_client
 pytest app/tests/ -v
 ```
 
-## Project Structure
+## C# Client
 
-```
-python_client/
-├── app/
-│   ├── main.py              # Flask entry point
-│   ├── core/
-│   │   ├── protocol.py      # Message schema & validation
-│   │   ├── session.py        # Ephemeral session management
-│   │   ├── consent.py        # Consent flow management
-│   │   └── state.py          # In-memory application state
-│   ├── ui/
-│   │   ├── routes.py         # Flask routes & API endpoints
-│   │   ├── templates/        # Jinja2 HTML templates
-│   │   └── static/           # CSS & JavaScript
-│   ├── crypto/
-│   │   ├── keys.py           # RSA key generation & fingerprints
-│   │   ├── sign.py           # Digital signatures (RSA-PSS)
-│   │   ├── encrypt.py        # AES-256-CTR encryption
-│   │   ├── mac.py            # HMAC-SHA256 integrity
-│   │   ├── kdf.py            # Key derivation (PBKDF2)
-│   │   └── hashing.py        # SHA-256 hashing utilities
-│   ├── network/
-│   │   ├── discovery.py      # mDNS peer discovery
-│   │   ├── transport.py      # TCP socket transport
-│   │   └── messages.py       # Message builder functions
-│   ├── storage/
-│   │   ├── vault.py          # Encrypted local storage
-│   │   ├── files.py          # Local file management
-│   │   └── manifests.py      # File manifest metadata
-│   └── tests/
-│       ├── test_protocol.py  # Protocol unit tests
-│       ├── test_crypto.py    # Crypto unit tests
-│       ├── test_storage.py   # Storage unit tests
-│       └── test_errors.py    # Error handling tests
-├── requirements.txt
-├── protocol_spec.md          # Protocol specification
-└── README.md
-```
-
-## Implementation Phases
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Local app shell & UI | ✅ Complete |
-| 2 | Protocol & message format | ✅ Complete |
-| 3 | Identity, keys, authentication | ⬜ Planned |
-| 4 | mDNS peer discovery | ⬜ Planned |
-| 5 | File list sharing | ⬜ Planned |
-| 6 | Consent-based file transfer | ⬜ Planned |
-| 7 | AES encryption + HMAC integrity | ⬜ Planned |
-| 8 | Perfect forward secrecy (ECDH) | ⬜ Planned |
-| 9 | Third-party file verification | ⬜ Planned |
-| 10 | Key migration & revocation | ⬜ Planned |
-| 11 | Secure local storage (vault) | ⬜ Planned |
-| 12 | Error handling & tests | ⬜ Planned |
-
-## Technology Stack
-
-- **Backend**: Flask
-- **Frontend**: HTML / CSS / Vanilla JS
-- **Crypto**: `cryptography` library
-- **Discovery**: `zeroconf`
-- **Testing**: `pytest`
+Usually you would have to build the C# client from source located in the `cs_client/P2PFT_Cs` directory, but for convenience, we have included a pre-built executable in the `cs_client` directory. To run the C# client, simply navigate to the `cs_client` directory and execute the `.exe` file directly.
