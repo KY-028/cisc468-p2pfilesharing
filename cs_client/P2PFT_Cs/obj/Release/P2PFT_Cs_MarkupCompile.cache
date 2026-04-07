@@ -4,17 +4,17 @@
 winexe
 C#
 .cs
-G:\files\repos\c++_client\P2PFT_Cs\obj\Release\
+G:\files\repos\cs_client\P2PFT_Cs\obj\Release\
 P2PFT_Cs
 none
 false
 TRACE
-G:\files\repos\c++_client\P2PFT_Cs\App.xaml
-1219584333
+G:\files\repos\cs_client\P2PFT_Cs\App.xaml
+2880090724
 
-18-2057163257
+211453618430
 15-1587909608
-MainWindow.xaml;
+MainWindow.xaml;ChangePasswordDialog.xaml;
 
 True
 

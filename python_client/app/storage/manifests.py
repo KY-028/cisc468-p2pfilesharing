@@ -41,12 +41,10 @@ class PeerManifest:
     files: list[ManifestEntry] = field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
-# In-memory manifest store: peer_id -> PeerManifest
-# ---------------------------------------------------------------------------
+
 _peer_manifests: dict[str, PeerManifest] = {}
 
-# Directory for persisting manifests (set by init_manifest_storage)
+
 _manifest_dir: Optional[str] = None
 
 
@@ -70,8 +68,7 @@ def _save_manifest(peer_id: str, file_list: list[dict]) -> None:
     if not path:
         return
     try:
-        # Ensure all values are JSON-serializable (signatures may be bytes
-        # after protocol deserialization — convert back to base64 strings)
+        
         safe_list = []
         for entry in file_list:
             safe_entry = {}
@@ -93,12 +90,12 @@ def _load_all_manifests() -> None:
     for fname in os.listdir(_manifest_dir):
         if not fname.endswith(".json"):
             continue
-        peer_id = fname[:-5]  # strip .json
+        peer_id = fname[:-5]  
         path = os.path.join(_manifest_dir, fname)
         try:
             with open(path, "r", encoding="utf-8") as f:
                 file_list = json.load(f)
-            # Store in memory without re-saving to disk
+           
             entries = [
                 ManifestEntry(
                     filename=e.get("filename", ""),
@@ -129,8 +126,7 @@ def store_manifest(peer_id: str, file_list: list[dict]) -> PeerManifest:
     logger.info(f"manifests.store_manifest → storing {len(file_list)} files from {peer_id}")
     entries = []
     for f in file_list:
-        # Signature may arrive as bytes (after protocol base64 decoding)
-        # — convert to base64 string for consistent in-memory storage
+     
         sig = f.get("signature")
         if isinstance(sig, bytes):
             sig = base64.b64encode(sig).decode("ascii")
@@ -146,7 +142,7 @@ def store_manifest(peer_id: str, file_list: list[dict]) -> PeerManifest:
     _peer_manifests[peer_id] = manifest
     logger.info(f"Stored manifest for {peer_id}: {len(entries)} files")
 
-    # Persist to disk so it survives restarts
+  
     _save_manifest(peer_id, file_list)
 
     return manifest

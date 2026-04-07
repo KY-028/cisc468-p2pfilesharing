@@ -11,9 +11,6 @@ Reading order: Read protocol.py FIRST, then this file.
 from app.core.protocol import MessageType, create_message
 
 
-# ---------------------------------------------------------------------------
-# Peer Discovery Messages
-# ---------------------------------------------------------------------------
 
 def peer_announce(peer_id: str, port: int,
                   public_key: bytes = None, display_name: str = None) -> dict:
@@ -32,9 +29,6 @@ def peer_announce(peer_id: str, port: int,
     return create_message(MessageType.PEER_ANNOUNCE, payload)
 
 
-# ---------------------------------------------------------------------------
-# Key Exchange Messages
-# ---------------------------------------------------------------------------
 
 def key_exchange_init(peer_id: str, ephemeral_public_key: bytes) -> dict:
     """
@@ -76,9 +70,6 @@ def key_exchange_confirm(peer_id: str, long_term_public_key: bytes,
     })
 
 
-# ---------------------------------------------------------------------------
-# File List Messages
-# ---------------------------------------------------------------------------
 
 def file_list_request(peer_id: str) -> dict:
     """Create a FILE_LIST_REQUEST message."""
@@ -102,9 +93,6 @@ def file_list_response(peer_id: str, files: list[dict]) -> dict:
     })
 
 
-# ---------------------------------------------------------------------------
-# File Transfer Messages
-# ---------------------------------------------------------------------------
 
 def file_request(peer_id: str, filename: str, file_hash: str) -> dict:
     """
@@ -138,9 +126,6 @@ def file_send(peer_id: str, filename: str, file_hash: str,
     return create_message(MessageType.FILE_SEND, payload)
 
 
-# ---------------------------------------------------------------------------
-# Consent Messages
-# ---------------------------------------------------------------------------
 
 def consent_request(peer_id: str, action: str, filename: str,
                     file_hash: str = None) -> dict:
@@ -167,9 +152,6 @@ def consent_response(peer_id: str, request_id: str, approved: bool) -> dict:
     })
 
 
-# ---------------------------------------------------------------------------
-# Key Revocation
-# ---------------------------------------------------------------------------
 
 def revoke_key(peer_id: str, new_public_key: bytes,
                reason: str = None) -> dict:
@@ -186,9 +168,6 @@ def revoke_key(peer_id: str, new_public_key: bytes,
     return create_message(MessageType.REVOKE_KEY, payload)
 
 
-# ---------------------------------------------------------------------------
-# Verification
-# ---------------------------------------------------------------------------
 
 def verify_confirm(peer_id: str) -> dict:
     """Create a VERIFY_CONFIRM message. Signals that this peer has accepted the verification code."""
@@ -204,9 +183,6 @@ def verify_reject(peer_id: str) -> dict:
     })
 
 
-# ---------------------------------------------------------------------------
-# Error
-# ---------------------------------------------------------------------------
 
 def error_message(peer_id: str, code: str, description: str) -> dict:
     """

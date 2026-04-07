@@ -111,7 +111,7 @@ class TestSendReceive:
         time.sleep(0.1)
 
         with socket.create_connection(("127.0.0.1", port)) as sock:
-            sock.close()  # Close immediately
+            sock.close() 
 
         t.join(timeout=3)
         assert did_return_none[0] is True

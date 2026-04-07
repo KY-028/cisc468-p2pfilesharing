@@ -39,9 +39,7 @@ from app.network.messages import (
 )
 
 
-# ===================================================================
-# Test: Message Creation
-# ===================================================================
+
 
 class TestCreateMessage:
     """Test that create_message builds valid message dicts."""
@@ -62,9 +60,7 @@ class TestCreateMessage:
             create_message("INVALID_TYPE", {"peer_id": "x"})
 
 
-# ===================================================================
-# Test: Validation
-# ===================================================================
+
 
 class TestValidateMessage:
     """Test that validate_message catches invalid messages."""
@@ -78,7 +74,7 @@ class TestValidateMessage:
     def test_valid_message_passes(self):
         msg = self._make_valid()
         result = validate_message(msg)
-        assert result is msg  # Returns the same object
+        assert result is msg  
 
     def test_missing_version(self):
         msg = self._make_valid()
@@ -120,15 +116,13 @@ class TestValidateMessage:
         msg = create_message(MessageType.FILE_REQUEST, {
             "peer_id": "peer-x",
             "filename": "test.txt",
-            # missing "file_hash"
+
         })
         with pytest.raises(ProtocolError, match="file_hash"):
             validate_message(msg)
 
 
-# ===================================================================
-# Test: Serialization Round-Trip
-# ===================================================================
+
 
 class TestSerialization:
     """Test serialize → deserialize produces equivalent messages."""
@@ -148,7 +142,7 @@ class TestSerialization:
         msg = key_exchange_init("peer-2", ephemeral_public_key=raw_key)
         json_str = serialize(msg)
 
-        # Verify the JSON contains a base64 string, not raw bytes
+
         parsed = json.loads(json_str)
         assert isinstance(parsed["payload"]["ephemeral_public_key"], str)
 
@@ -175,9 +169,7 @@ class TestSerialization:
             deserialize('"just a string"')
 
 
-# ===================================================================
-# Test: Message Builders
-# ===================================================================
+
 
 class TestMessageBuilders:
     """Test that each message builder creates valid messages."""
@@ -235,9 +227,7 @@ class TestMessageBuilders:
         validate_message(msg)
 
 
-# ===================================================================
-# Test: Base64 Helpers
-# ===================================================================
+
 
 class TestBase64Helpers:
     """Test encode_bytes and decode_bytes."""

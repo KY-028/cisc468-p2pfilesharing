@@ -14,9 +14,7 @@ let lastData = null;
 let identityPanelOpen = false;
 
 
-// ============================================================
-// Helper: POST to an API endpoint with form data
-// ============================================================
+
 async function apiPost(url, data = {}) {
     const formData = new FormData();
     for (const [key, value] of Object.entries(data)) {
@@ -32,9 +30,6 @@ async function apiPost(url, data = {}) {
 }
 
 
-// ============================================================
-// Helper: Format bytes into a readable size
-// ============================================================
 function formatSize(bytes) {
     if (bytes === 0) return "0 B";
     const units = ["B", "KB", "MB", "GB"];
@@ -43,9 +38,7 @@ function formatSize(bytes) {
 }
 
 
-// ============================================================
-// Helper: Format timestamp
-// ============================================================
+
 function formatTime(ts) {
     if (!ts) return "";
     const d = new Date(ts * 1000);
@@ -53,9 +46,6 @@ function formatTime(ts) {
 }
 
 
-// ============================================================
-// Security: Escape HTML
-// ============================================================
 function escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text;
@@ -63,9 +53,7 @@ function escapeHtml(text) {
 }
 
 
-// ============================================================
-// Determine peer status class for the colored dot
-// ============================================================
+
 function getPeerStatusClass(peer) {
     if (peer.online && peer.trusted) return "online-verified";
     if (peer.online && peer.verify_pending) return "online-pending";
@@ -81,9 +69,7 @@ function getPeerStatusLabel(peer) {
 }
 
 
-// ============================================================
-// Render: Sidebar peer list
-// ============================================================
+
 function renderPeerSidebar(peers) {
     const container = document.getElementById("peer-list");
     if (!peers || peers.length === 0) {
@@ -91,7 +77,7 @@ function renderPeerSidebar(peers) {
         return;
     }
 
-    // Sort: online first, then by name
+
     const sorted = [...peers].sort((a, b) => {
         if (a.online !== b.online) return a.online ? -1 : 1;
         return a.display_name.localeCompare(b.display_name);
@@ -111,9 +97,7 @@ function renderPeerSidebar(peers) {
 }
 
 
-// ============================================================
-// Render: My shared files
-// ============================================================
+
 function renderMyFiles(files) {
     const container = document.getElementById("file-list");
     if (!files || files.length === 0) {
@@ -133,9 +117,7 @@ function renderMyFiles(files) {
 }
 
 
-// ============================================================
-// Render: Consent requests
-// ============================================================
+
 function renderConsents(consents) {
     const section = document.getElementById("consent-section");
     const container = document.getElementById("consent-list");
@@ -146,7 +128,7 @@ function renderConsents(consents) {
         return;
     }
 
-    // Show the section prominently
+
     section.style.display = "";
     container.innerHTML = consents.map(c => `
         <div class="list-item consent-item">
@@ -168,16 +150,14 @@ function renderConsents(consents) {
 }
 
 
-// ============================================================
-// Render: Status log
-// ============================================================
+
 function renderStatusLog(logs) {
     const container = document.getElementById("status-log");
     if (!logs || logs.length === 0) {
         container.innerHTML = '<p class="empty-state">No activity yet.</p>';
         return;
     }
-    // Show last 20
+
     container.innerHTML = logs.slice(0, 20).map(s => `
         <div class="status-entry ${s.level}">
             <span class="status-dot"></span>
@@ -188,9 +168,7 @@ function renderStatusLog(logs) {
 }
 
 
-// ============================================================
-// Render: Vault files (encrypted at rest)
-// ============================================================
+
 function renderVaultFiles(vaultFiles) {
     const container = document.getElementById("vault-file-list");
     if (!container) return;
@@ -215,22 +193,19 @@ async function downloadVaultFile(filename) {
 }
 
 
-// ============================================================
-// Peer Selection — show peer detail view
-// ============================================================
+
 function selectPeer(peerId) {
     selectedPeerId = peerId;
 
-    // Switch views
+
     document.getElementById("view-home").classList.remove("active");
     document.getElementById("view-peer").classList.add("active");
 
-    // Update sidebar active state
+
     document.querySelectorAll(".peer-sidebar-item").forEach(el => {
         el.classList.remove("active");
     });
 
-    // Find and activate the correct sidebar item
     const items = document.querySelectorAll(".peer-sidebar-item");
     items.forEach(el => {
         if (el.getAttribute("onclick").includes(peerId)) {
@@ -240,7 +215,7 @@ function selectPeer(peerId) {
 
     updatePeerDetailView();
 
-    // Auto-fetch file list from this peer
+
     fetchPeerFiles(peerId);
 }
 
@@ -251,9 +226,7 @@ function goBackHome() {
 }
 
 
-// ============================================================
-// Update the peer detail view with current data
-// ============================================================
+
 function updatePeerDetailView() {
     if (!lastData || !selectedPeerId) return;
 
@@ -268,7 +241,7 @@ function updatePeerDetailView() {
     document.getElementById("peer-detail-address").textContent = `${peer.address}:${peer.port}`;
     document.getElementById("peer-detail-fingerprint").textContent = peer.fingerprint;
 
-    // Status badge
+
     const badge = document.getElementById("peer-detail-badge");
     badge.className = "status-badge";
     if (peer.online && peer.trusted) {
@@ -282,7 +255,6 @@ function updatePeerDetailView() {
         badge.textContent = "Offline";
     }
 
-    // Trusted indicator
     const trustedEl = document.getElementById("peer-detail-trusted");
     if (peer.trusted) {
         trustedEl.innerHTML = '<span class="status-badge verified">✓ Verified</span>';
@@ -292,7 +264,7 @@ function updatePeerDetailView() {
         trustedEl.innerHTML = '<span class="status-badge unverified">Not Verified</span>';
     }
 
-    // Verify button state
+
     const verifyBtn = document.getElementById("btn-verify-peer");
     if (peer.trusted) {
         verifyBtn.textContent = "✓ Already Verified";
@@ -316,7 +288,7 @@ function updatePeerDetailView() {
         verifyBtn.classList.add("btn-primary");
     }
 
-    // Fetch files button state
+
     const fetchBtn = document.getElementById("btn-fetch-files");
     if (!peer.online) {
         fetchBtn.textContent = "📄 Peer Offline";
@@ -326,17 +298,12 @@ function updatePeerDetailView() {
         fetchBtn.disabled = false;
     }
 
-    // Render peer's files from manifests
     renderPeerFiles(selectedPeerId);
-
-    // Render "send file" options
     renderSendFileOptions(selectedPeerId);
 }
 
 
-// ============================================================
-// Render: Peer's available files (from manifests)
-// ============================================================
+
 function renderPeerFiles(peerId) {
     const container = document.getElementById("peer-file-list");
     if (!lastData) return;
@@ -362,9 +329,7 @@ function renderPeerFiles(peerId) {
 }
 
 
-// ============================================================
-// Render: Send file options (my files → send to selected peer)
-// ============================================================
+
 function renderSendFileOptions(peerId) {
     const container = document.getElementById("send-file-list");
     if (!lastData) return;
@@ -397,13 +362,11 @@ function renderSendFileOptions(peerId) {
 }
 
 
-// ============================================================
-// Actions
-// ============================================================
+
 async function fetchPeerFiles(peerId) {
     const peer = lastData?.peers.find(p => p.peer_id === peerId);
     if (peer && !peer.online) {
-        // Still show cached manifest if available
+ 
         renderPeerFiles(peerId);
         return;
     }
@@ -411,15 +374,14 @@ async function fetchPeerFiles(peerId) {
     if (!result.ok) {
         console.warn("Failed to fetch file list:", result.error);
     }
-    // The response will arrive async and be stored in manifests
-    // Next poll will pick it up
+
     setTimeout(pollStatus, 1000);
 }
 
 async function requestFileFromPeer(peerId, filename) {
     const result = await apiPost("/api/request-file", { peer_id: peerId, filename });
     if (result.ok) {
-        // Status will update via polling
+
     }
     await pollStatus();
 }
@@ -427,7 +389,7 @@ async function requestFileFromPeer(peerId, filename) {
 async function sendFileToPeer(peerId, filename) {
     const result = await apiPost("/api/send-file", { peer_id: peerId, filename });
     if (result.ok) {
-        // Status will update via polling
+
     }
     await pollStatus();
 }
@@ -448,7 +410,7 @@ async function verifyPeer(peerId) {
     }
 
     if (result.ok && result.verification_code) {
-        // Show verification modal with the code
+
         showVerifyModal(peerId, result.verification_code,
                         result.my_fingerprint, result.their_fingerprint);
         btn.textContent = "🔐 Verify Peer";
@@ -460,9 +422,7 @@ async function verifyPeer(peerId) {
     }
 }
 
-// ============================================================
-// Verification Code Modal
-// ============================================================
+
 let verifyingPeerId = null;
 
 function showVerifyModal(peerId, code, myFp, theirFp) {
@@ -510,9 +470,7 @@ async function scanFiles() {
 }
 
 
-// ============================================================
-// Identity Panel + Key Management
-// ============================================================
+
 function toggleIdentityPanel() {
     const panel = document.getElementById("identity-panel");
     const trigger = document.getElementById("identity-trigger");
@@ -646,9 +604,7 @@ async function submitVaultKeyChange(event) {
 }
 
 
-// ============================================================
-// Consent Modal
-// ============================================================
+
 function showConsentModal(requestId, peerName, action, filename) {
     currentConsentId = requestId;
     document.getElementById("modal-peer-name").textContent = peerName;
@@ -671,16 +627,14 @@ async function respondConsent(action) {
 }
 
 
-// ============================================================
-// Poll: Fetch status and re-render
-// ============================================================
+
 async function pollStatus() {
     try {
         const resp = await fetch("/api/status");
         const data = await resp.json();
         lastData = data;
 
-        // Update identity panel
+
         const navPeerId = document.getElementById("navbar-peer-id-value");
         const identityPeerId = document.getElementById("identity-peer-id");
         const identityFingerprint = document.getElementById("identity-fingerprint");
@@ -693,24 +647,23 @@ async function pollStatus() {
             identityStatus.textContent = "Online";
         }
 
-        // Update sidebar
+
         renderPeerSidebar(data.peers);
 
-        // Update home view panels
+
         renderMyFiles(data.shared_files);
         renderConsents(data.pending_consents);
         renderStatusLog(data.status_log);
         renderVaultFiles(data.vault_files);
 
-        // Update peer detail view if a peer is selected
         if (selectedPeerId) {
             updatePeerDetailView();
         }
 
-        // Show verification modal if there is a pending verification
+    
         if (data.pending_verifications && data.pending_verifications.length > 0) {
             const pv = data.pending_verifications[0];
-            // Only show if it's not already showing for this peer
+
             if (verifyingPeerId !== pv.peer_id && document.getElementById("verify-modal").classList.contains("hidden")) {
                 showVerifyModal(pv.peer_id, pv.code, pv.my_fingerprint, pv.their_fingerprint);
             }
@@ -721,9 +674,7 @@ async function pollStatus() {
 }
 
 
-// ============================================================
-// Event Listeners
-// ============================================================
+
 document.addEventListener("DOMContentLoaded", () => {
     const identityTrigger = document.getElementById("identity-trigger");
     const identityClose = document.getElementById("identity-close");
@@ -777,39 +728,38 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
     }
 
-    // Refresh peers
+
     document.getElementById("btn-refresh-peers").addEventListener("click", async () => {
         await apiPost("/api/refresh-peers");
         await pollStatus();
     });
 
-    // Scan files
+
     document.getElementById("btn-scan-files").addEventListener("click", scanFiles);
 
-    // Back button
+
     document.getElementById("btn-back-home").addEventListener("click", goBackHome);
 
-    // Verify peer
+
     document.getElementById("btn-verify-peer").addEventListener("click", () => {
         if (selectedPeerId) verifyPeer(selectedPeerId);
     });
 
-    // Fetch peer files
     document.getElementById("btn-fetch-files").addEventListener("click", () => {
         if (selectedPeerId) fetchPeerFiles(selectedPeerId);
     });
 
-    // Consent modal buttons
+
     document.getElementById("modal-accept").addEventListener("click", () => respondConsent("accept"));
     document.getElementById("modal-deny").addEventListener("click", () => respondConsent("deny"));
     document.querySelector("#consent-modal .modal-backdrop").addEventListener("click", hideConsentModal);
 
-    // Verification modal buttons
+
     document.getElementById("verify-confirm").addEventListener("click", confirmVerification);
     document.getElementById("verify-reject").addEventListener("click", rejectVerification);
     document.getElementById("verify-modal-backdrop").addEventListener("click", hideVerifyModal);
 
-    // Start polling
+
     pollStatus();
     setInterval(pollStatus, POLL_INTERVAL_MS);
 });

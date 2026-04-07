@@ -30,7 +30,7 @@ class TestVerifyReceivedFile:
         self.pub_pem = serialize_public_key(self.pub_key).decode("utf-8")
         self.owner_id = "owner-test"
 
-        # Register the owner as a known peer
+
         app_state.peers[self.owner_id] = PeerInfo(
             peer_id=self.owner_id,
             display_name="Owner",
@@ -145,7 +145,7 @@ class TestVerifyManifestEntry:
 
         result = verify_manifest_entry(self.peer_id, "nosig.txt")
         assert result is not None
-        assert result["signature_valid"] is None  # Not applicable
+        assert result["signature_valid"] is None  
 
     def test_manifest_file_not_found(self):
         """Non-existent file should return None."""

@@ -36,9 +36,9 @@ logger = logging.getLogger(__name__)
 ui_blueprint = Blueprint("ui", __name__)
 
 
-# ---------------------------------------------------------------------------
+
 # Before-request guard: redirect to vault setup/unlock if key not loaded
-# ---------------------------------------------------------------------------
+
 
 _VAULT_EXEMPT_ENDPOINTS = frozenset({
     "ui.setup_page", "ui.unlock_page",
@@ -59,9 +59,9 @@ def require_vault_unlocked():
     return redirect(url_for("ui.setup_page"))
 
 
-# ---------------------------------------------------------------------------
+
 # Vault setup / unlock pages
-# ---------------------------------------------------------------------------
+
 
 @ui_blueprint.route("/setup")
 def setup_page():
@@ -184,9 +184,9 @@ def vault_change_password():
     return jsonify({"ok": True, "skipped_files": []})
 
 
-# ---------------------------------------------------------------------------
+
 # Vault file management API
-# ---------------------------------------------------------------------------
+
 
 @ui_blueprint.route("/api/vault/files")
 def vault_files_api():
@@ -217,9 +217,7 @@ def vault_download(filename):
     )
 
 
-# ---------------------------------------------------------------------------
 # Pages
-# ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/")
 def index():
@@ -237,9 +235,7 @@ def dashboard():
     return render_template("dashboard.html")
 
 
-# ---------------------------------------------------------------------------
 # Peer API
-# ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/refresh-peers", methods=["POST"])
 def refresh_peers():
@@ -251,9 +247,7 @@ def refresh_peers():
     return jsonify({"ok": True, "message": "Peer refresh triggered"})
 
 
-# ---------------------------------------------------------------------------
 # File API
-# ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/add-shared-file", methods=["POST"])
 def add_shared_file():
@@ -311,9 +305,7 @@ def remove_shared_file():
         return jsonify({"ok": False, "error": "not found"}), 404
 
 
-# ---------------------------------------------------------------------------
 # File Request / Send
-# ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/request-file", methods=["POST"])
 def request_file():
@@ -383,14 +375,12 @@ def send_file_to_peer_route():
         app_state.add_status(f"File '{filename}' not in shared files.", level="error")
         return jsonify({"ok": False, "error": "File not shared"}), 404
 
-    # Send a consent request to the receiver — file is only sent after they approve
+
     send_consent_offer(peer_id, shared.filename, shared.sha256_hash)
     return jsonify({"ok": True, "peer_id": peer_id, "filename": filename})
 
 
-# ---------------------------------------------------------------------------
 # Consent API
-# ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/consent/<request_id>/<action>", methods=["POST"])
 def handle_consent(request_id: str, action: str):
@@ -418,7 +408,6 @@ def handle_consent(request_id: str, action: str):
         level="success" if approved else "info"
     )
 
-    # Store the resolved consent info so on_consent_approved can look it up
     resolved = getattr(app_state, '_resolved_consents', {})
     app_state._resolved_consents = resolved
     resolved[request_id] = {
@@ -439,9 +428,7 @@ def handle_consent(request_id: str, action: str):
 
 
 
-# ---------------------------------------------------------------------------
 # Key Rotation
-# ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/rotate-key", methods=["POST"])
 def rotate_key_route():
@@ -452,9 +439,7 @@ def rotate_key_route():
     return jsonify({"ok": True, **result})
 
 
-# ---------------------------------------------------------------------------
 # File Verification
-# ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/verify-file", methods=["POST"])
 def verify_file_route():
@@ -497,7 +482,7 @@ def verify_peer_route():
         return jsonify({"ok": True, "already_verified": True,
                         "message": "Peer is already verified."})
 
-    # Ensure we have a session (handshake) so we have the peer's public key
+    
     session_key = get_session_key(peer_id)
     if not session_key:
         session_key = initiate_handshake(peer_id, peer.address, peer.port)
@@ -505,8 +490,7 @@ def verify_peer_route():
             return jsonify({"ok": False, "error": "Handshake failed. Could not reach peer."}), 500
 
     # Generate the verification code from both fingerprints.
-    # Both peers derive the SAME code because we sort the fingerprints
-    # before hashing — order doesn't matter.
+
     my_fp = app_state.fingerprint or ""
     their_fp = peer.fingerprint or ""
     if not their_fp or their_fp == "unknown":
@@ -550,11 +534,11 @@ def confirm_verify_route():
     if not peer:
         return jsonify({"ok": False, "error": "Unknown peer"}), 404
 
-    # Record that *we* confirmed
+    
     app_state.verify_confirmed_by_me.add(peer_id)
     app_state.pending_verifications = [pv for pv in app_state.pending_verifications if pv["peer_id"] != peer_id]
 
-    # Notify the peer that we confirmed
+ 
     try:
         with _socket.create_connection((peer.address, peer.port), timeout=10) as sock:
             msg = verify_confirm(app_state.peer_id)
@@ -562,7 +546,7 @@ def confirm_verify_route():
     except Exception as e:
         logger.error(f"Failed to send VERIFY_CONFIRM to {peer_id}: {e}")
 
-    # Check if the other side already confirmed too
+   
     if peer_id in app_state.verify_confirmed_by_peer:
         peer.trusted = True
         app_state.verify_confirmed_by_me.discard(peer_id)
@@ -572,7 +556,7 @@ def confirm_verify_route():
             level="success"
         )
         app_state.save_trusted_peers()
-        # Auto-fetch file list now that the peer is verified
+      
         from app.core.sessions import _auto_fetch_file_list
         _auto_fetch_file_list(peer_id)
         return jsonify({"ok": True, "verified": True})
@@ -604,7 +588,7 @@ def reject_verify_route():
     app_state.verify_confirmed_by_me.discard(peer_id)
     app_state.verify_confirmed_by_peer.discard(peer_id)
 
-    # Notify the peer that we rejected, so they leave the "waiting" state
+   
     if peer and peer.online:
         try:
             with _socket.create_connection((peer.address, peer.port), timeout=10) as sock:
@@ -613,7 +597,7 @@ def reject_verify_route():
         except Exception as e:
             logger.error(f"Failed to send VERIFY_REJECT to {peer_id}: {e}")
 
-    # Destroy the session — it may be compromised
+  
     remove_session(peer_id)
 
     app_state.add_status(
@@ -625,9 +609,7 @@ def reject_verify_route():
     return jsonify({"ok": True, "rejected": True})
 
 
-# ---------------------------------------------------------------------------
 # Status API
-# ---------------------------------------------------------------------------
 
 @ui_blueprint.route("/api/status")
 def get_status():

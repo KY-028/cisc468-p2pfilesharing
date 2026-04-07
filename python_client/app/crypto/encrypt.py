@@ -19,7 +19,7 @@ import struct
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
-# Nonce size: 12 bytes is the recommended size for GCM
+
 NONCE_SIZE = 12
 
 
@@ -48,7 +48,7 @@ def encrypt(key: bytes, plaintext: bytes,
     aesgcm = AESGCM(key)
     ciphertext = aesgcm.encrypt(nonce, plaintext, associated_data)
 
-    # Prepend the nonce so the recipient can extract it
+  
     return nonce + ciphertext
 
 
@@ -77,7 +77,7 @@ def decrypt(key: bytes, ciphertext_blob: bytes,
     if len(ciphertext_blob) < NONCE_SIZE + 16:
         raise ValueError("Ciphertext too short (must contain nonce + tag)")
 
-    # Split nonce from ciphertext
+   
     nonce = ciphertext_blob[:NONCE_SIZE]
     ciphertext = ciphertext_blob[NONCE_SIZE:]
 

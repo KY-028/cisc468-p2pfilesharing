@@ -11,7 +11,6 @@ This module manages the consent workflow:
 Also handles push offers (CONSENT_REQUEST) where a peer offers
 to send you a file and you must approve first.
 
-Reading order: Read files.py and transport.py first, then this file.
 """
 
 import os
@@ -88,9 +87,6 @@ def _verify_owner_signature(filename: str, file_hash: str, sender_id: str) -> No
             return
 
 
-# ---------------------------------------------------------------------------
-# Outgoing requests: we initiate
-# ---------------------------------------------------------------------------
 
 def request_file_from_peer(peer_id: str, filename: str, file_hash: str = "") -> Optional[TransferRecord]:
     """
@@ -126,7 +122,7 @@ def request_file_from_peer(peer_id: str, filename: str, file_hash: str = "") -> 
     )
     app_state.transfers.append(record)
 
-    # If the peer is online, try a direct request
+   
     if peer.online:
         try:
             msg = file_request(app_state.peer_id, filename, file_hash or "0" * 64)
@@ -140,10 +136,7 @@ def request_file_from_peer(peer_id: str, filename: str, file_hash: str = "") -> 
                 f"Direct request to {peer_id} failed, searching other peers…",
                 level="warning"
             )
-            # Fall through to broadcast
-
-    # Peer is offline (or direct request failed) — broadcast to other peers
-    # First, resolve the file hash from the cached manifest if we don't have it
+            
     if not file_hash:
         manifest = get_manifest(peer_id)
         if manifest:
@@ -252,7 +245,7 @@ def send_consent_offer(peer_id: str, filename: str, file_hash: str) -> bool:
         with socket.create_connection((peer.address, peer.port), timeout=10) as sock:
             send_message(sock, msg)
 
-        # Store pending send info so we can send the file when they approve
+        
         from app.storage.files import get_file_by_name
         shared = get_file_by_name(filename)
         if shared:
@@ -281,9 +274,6 @@ def send_consent_offer(peer_id: str, filename: str, file_hash: str) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Incoming message handlers
-# ---------------------------------------------------------------------------
 
 def handle_file_list_request(msg: dict, sock, addr) -> None:
     """
@@ -321,7 +311,7 @@ def handle_file_request(msg: dict, sock, addr) -> None:
     file_hash = payload.get("file_hash", "")
     logger.info(f"consent.handle_file_request ← {peer_id} wants '{filename}', creating consent prompt")
 
-    # Check if we have the file (shared files first, then received files)
+  
     shared = get_file_by_name(filename) or get_file_by_hash(file_hash)
     if not shared and file_hash:
         shared = find_received_file_by_hash(file_hash)
@@ -329,7 +319,7 @@ def handle_file_request(msg: dict, sock, addr) -> None:
             source = "vault" if shared.filepath.endswith(".vault") else "received/"
             logger.info(f"File '{filename}' found in {source} (hash match) — can serve to peer")
     if not shared:
-        # Send error back
+       
         err = error_message(app_state.peer_id, "FILE_NOT_FOUND",
                             f"File '{filename}' not found in shared files")
         try:
@@ -339,7 +329,7 @@ def handle_file_request(msg: dict, sock, addr) -> None:
         app_state.add_status(f"Peer {peer_id} requested unknown file: {filename}", level="warning")
         return
 
-    # Create a consent request for the user to approve
+  
     peer_name = peer_id
     peer_info = app_state.peers.get(peer_id)
     if peer_info:
@@ -353,8 +343,7 @@ def handle_file_request(msg: dict, sock, addr) -> None:
         file_hash=shared.sha256_hash,
     )
 
-    # Store the socket connection info so we can send the file later
-    # We'll need the address for when the user approves
+  
     app_state._pending_sends = getattr(app_state, '_pending_sends', {})
     app_state._pending_sends[request_id] = {
         "peer_id": peer_id,
@@ -391,7 +380,7 @@ def handle_file_send(msg: dict, sock, addr) -> None:
     encrypted_data = payload.get("data", b"")
     logger.info(f"consent.handle_file_send ← receiving '{filename}' from {peer_id}, decrypting…")
 
-    # Decrypt using the session key
+   
     from app.core.sessions import get_session_key
     from app.crypto.encrypt import decrypt_file_payload
 
@@ -416,7 +405,7 @@ def handle_file_send(msg: dict, sock, addr) -> None:
         )
         return
 
-    # Verify the hash of the decrypted plaintext via core.verification
+ 
     from app.core.verification import verify_received_file
     verify_result = verify_received_file(file_data, file_hash, "", peer_id)
     actual_hash = verify_result["actual_hash"]
@@ -427,14 +416,13 @@ def handle_file_send(msg: dict, sock, addr) -> None:
         )
         return
 
-    # Check if user already consented (they requested the file, or approved
-    # a consent offer from this peer)
+    
     has_consent = _check_prior_consent(peer_id, filename)
 
     if has_consent:
         _save_received_file(peer_id, filename, file_data, actual_hash)
     else:
-        # Buffer the decrypted data and prompt the user
+       
         peer_name = peer_id
         peer_info = app_state.peers.get(peer_id)
         if peer_info:
@@ -448,7 +436,7 @@ def handle_file_send(msg: dict, sock, addr) -> None:
             file_hash=file_hash,
         )
 
-        # Buffer the decrypted file data for later saving
+      
         pending_receives = getattr(app_state, '_pending_receives', {})
         app_state._pending_receives = pending_receives
         pending_receives[request_id] = {
@@ -467,12 +455,12 @@ def handle_file_send(msg: dict, sock, addr) -> None:
 
 def _check_prior_consent(peer_id: str, filename: str) -> bool:
     """Check if the user already consented to receive this file."""
-    # Check 1: We have a pending transfer record (we requested the file)
+ 
     for t in app_state.transfers:
         if t.filename == filename and t.status == "pending":
             return True
 
-    # Check 2: We recently approved a consent offer from this peer
+   
     approved = getattr(app_state, '_approved_receives', set())
     key = f"{peer_id}:{filename}"
     if key in approved:
@@ -491,8 +479,7 @@ def _save_received_file(peer_id: str, filename: str, file_data: bytes,
 
     vault_key = get_vault_key()
     if vault_key is not None:
-        # --- Vault is unlocked: encrypt at rest ---
-        # Handle filename collision with existing vault files
+      
         store_name = filename
         from app.storage.vault import vault_list_files
         existing = vault_list_files()
@@ -510,7 +497,7 @@ def _save_received_file(peer_id: str, filename: str, file_data: bytes,
             level="success"
         )
     else:
-        # Vault not unlocked — fall back to plaintext (received/ dir)
+      
         received_dir = get_received_dir()
         save_path = os.path.join(received_dir, filename)
         if os.path.exists(save_path):
@@ -526,13 +513,10 @@ def _save_received_file(peer_id: str, filename: str, file_data: bytes,
             level="warning"
         )
 
-    # Cross-peer verification: if the file was originally owned by someone
-    # else, verify the owner's signature from the cached manifest.
+    
     _verify_owner_signature(filename, actual_hash, peer_id)
 
-    # Update any matching transfer records.
-    # Match by filename and hash — the file may arrive from a different peer
-    # than originally requested (broadcast fallback).
+   
     matched = False
     for t in app_state.transfers:
         if t.filename == filename and t.status == "pending":
@@ -546,7 +530,7 @@ def _save_received_file(peer_id: str, filename: str, file_data: bytes,
             matched = True
             break
     if not matched:
-        # Still mark any same-filename transfer as complete
+       
         for t in app_state.transfers:
             if t.filename == filename and t.peer_id == peer_id and t.status == "pending":
                 t.status = "complete"
@@ -596,9 +580,9 @@ def handle_consent_response(msg: dict, sock, addr) -> None:
     if approved:
         app_state.add_status(f"Peer {peer_id} approved the request", level="success")
 
-        # Check if we have a pending outgoing file for this peer
+      
         pending = getattr(app_state, '_pending_outgoing', {})
-        # Try to match by peer_id:filename
+       
         send_info = None
         for key in list(pending.keys()):
             if key.startswith(f"{peer_id}:"):
@@ -618,7 +602,7 @@ def handle_consent_response(msg: dict, sock, addr) -> None:
             )
     else:
         app_state.add_status(f"Peer {peer_id} denied the request", level="warning")
-        # Clean up pending outgoing
+      
         pending = getattr(app_state, '_pending_outgoing', {})
         for key in list(pending.keys()):
             if key.startswith(f"{peer_id}:"):
@@ -631,9 +615,6 @@ def handle_consent_response(msg: dict, sock, addr) -> None:
                 t.status = "denied"
 
 
-# ---------------------------------------------------------------------------
-# Consent resolution (called when user clicks accept/deny in UI)
-# ---------------------------------------------------------------------------
 
 def on_consent_approved(request_id: str) -> None:
     """
@@ -645,7 +626,7 @@ def on_consent_approved(request_id: str) -> None:
     """
     logger.info(f"consent.on_consent_approved → user approved request {request_id}")
 
-    # Case 1: We have buffered file data to save (FILE_SEND arrived before consent)
+   
     pending_receives = getattr(app_state, '_pending_receives', {})
     recv_info = pending_receives.pop(request_id, None)
     if recv_info:
@@ -657,7 +638,7 @@ def on_consent_approved(request_id: str) -> None:
         )
         return
 
-    # Case 2: Someone requested our file — send it
+
     pending_sends = getattr(app_state, '_pending_sends', {})
     send_info = pending_sends.pop(request_id, None)
     if send_info:
@@ -671,25 +652,20 @@ def on_consent_approved(request_id: str) -> None:
         )
         return
 
-    # Case 3: Consent offer from a peer who wants to send us a file.
-    # Send CONSENT_RESPONSE(approved) back so they proceed with FILE_SEND.
-    # Find the resolved consent to get the peer_id and filename.
-    # The consent was already resolved in routes.py, so we look it up
-    # by request_id from recently resolved consents.
+   
     consent_info = getattr(app_state, '_resolved_consents', {}).pop(request_id, None)
     if consent_info:
         peer_id = consent_info["peer_id"]
         filename = consent_info["filename"]
         peer = app_state.peers.get(peer_id)
         if peer and peer.online:
-            # Mark that we approved receiving from this peer
+          
             approved_set = getattr(app_state, '_approved_receives', set())
             app_state._approved_receives = approved_set
             approved_set.add(f"{peer_id}:{filename}")
 
             try:
                 resp = consent_response(app_state.peer_id, request_id, True)
-                # Include filename so sender can match it
                 resp["payload"]["filename"] = filename
                 with socket.create_connection((peer.address, peer.port), timeout=10) as sock:
                     send_message(sock, resp)
@@ -711,15 +687,15 @@ def on_consent_denied(request_id: str) -> None:
     """
     logger.info(f"consent.on_consent_denied → user denied request {request_id}")
 
-    # Clean up buffered file data
+   
     pending_receives = getattr(app_state, '_pending_receives', {})
     pending_receives.pop(request_id, None)
 
-    # Clean up pending sends
+ 
     pending_sends = getattr(app_state, '_pending_sends', {})
     pending_sends.pop(request_id, None)
 
-    # Send CONSENT_RESPONSE(denied) back to peer if this was a consent offer
+  
     consent_info = getattr(app_state, '_resolved_consents', {}).pop(request_id, None)
     if consent_info:
         peer_id = consent_info["peer_id"]
@@ -751,7 +727,7 @@ def _send_file_to_peer(peer_id: str, address: str, port: int,
 
     logger.info(f"consent._send_file_to_peer → sending '{filename}' to {peer_id} at {address}:{port}")
     try:
-        # Step 1: Ensure we have a session key (PFS via ephemeral ECDH)
+       
         session_key = get_session_key(peer_id)
         if not session_key:
             app_state.add_status(
@@ -766,7 +742,7 @@ def _send_file_to_peer(peer_id: str, address: str, port: int,
                 )
                 return
 
-        # Step 2: Read file (decrypt from vault if stored there)
+      
         if filepath.endswith(".vault"):
             from app.storage.vault import vault_retrieve_file as _vault_get
             vault_name = os.path.basename(filepath).replace(".vault", "")
@@ -781,12 +757,12 @@ def _send_file_to_peer(peer_id: str, address: str, port: int,
             with open(filepath, "rb") as f:
                 file_data = f.read()
 
-        # Step 3: Encrypt (AES-256-GCM, AAD = "filename:hash")
+      
         encrypted_data = encrypt_file_payload(
             session_key, file_data, filename, file_hash
         )
 
-        # Step 4: Send the encrypted blob
+   
         msg = file_send(
             app_state.peer_id, filename, file_hash, data=encrypted_data
         )

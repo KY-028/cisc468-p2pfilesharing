@@ -34,9 +34,7 @@ from app.core.verification import generate_verification_code
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Session key store: peer_id → 32-byte AES key
-# ---------------------------------------------------------------------------
+
 _session_keys: dict[str, bytes] = {}
 
 
@@ -89,13 +87,10 @@ def _auto_fetch_file_list(peer_id: str) -> None:
         except Exception as e:
             logger.warning(f"Auto-fetch file list from {peer_id} failed: {e}")
 
-    # Run in background thread to avoid blocking the handshake connection
+   
     threading.Thread(target=_fetch, daemon=True).start()
 
 
-# ---------------------------------------------------------------------------
-# INITIATOR: we start the handshake before sending a file
-# ---------------------------------------------------------------------------
 
 def initiate_handshake(peer_id: str, address: str, port: int) -> Optional[bytes]:
     """
@@ -114,7 +109,7 @@ def initiate_handshake(peer_id: str, address: str, port: int) -> Optional[bytes]
 
     try:
         with socket.create_connection((address, port), timeout=15) as sock:
-            # Step 1: Send our ephemeral public key
+          
             init_payload = sts.create_init()
             msg = key_exchange_init(
                 app_state.peer_id,
@@ -122,7 +117,7 @@ def initiate_handshake(peer_id: str, address: str, port: int) -> Optional[bytes]
             )
             send_message(sock, msg)
 
-            # Step 2: Receive and verify the responder's message
+           
             response_msg = receive_message(sock)
             if not response_msg:
                 raise ValueError("Connection closed, no response received")
@@ -138,7 +133,7 @@ def initiate_handshake(peer_id: str, address: str, port: int) -> Optional[bytes]
                 "signature":           resp["signature"],
             })
 
-            # Step 3: Send our long-term key + signature
+       
             confirm_msg = key_exchange_confirm(
                 app_state.peer_id,
                 confirm_payload["long_term_public_key"],
@@ -146,7 +141,7 @@ def initiate_handshake(peer_id: str, address: str, port: int) -> Optional[bytes]
             )
             send_message(sock, confirm_msg)
 
-        # Handshake complete — store results
+   
         session_key = sts.session_key
         store_session_key(peer_id, session_key)
         _update_peer_key(peer_id, sts)
@@ -172,9 +167,6 @@ def initiate_handshake(peer_id: str, address: str, port: int) -> Optional[bytes]
         return None
 
 
-# ---------------------------------------------------------------------------
-# RESPONDER: handle an incoming KEY_EXCHANGE_INIT
-# ---------------------------------------------------------------------------
 
 def handle_handshake_init(msg: dict, sock, addr) -> None:
     """
@@ -193,7 +185,7 @@ def handle_handshake_init(msg: dict, sock, addr) -> None:
     sts = STSSession(app_state._private_key, app_state._public_key)
 
     try:
-        # Step 1: Process the INIT, create our RESPONSE
+       
         eph_bytes = payload["ephemeral_public_key"]
         resp_payload = sts.handle_init({"ephemeral_public_key": eph_bytes})
 
@@ -205,7 +197,7 @@ def handle_handshake_init(msg: dict, sock, addr) -> None:
         )
         send_message(sock, resp_msg)
 
-        # Step 2: Receive and verify the CONFIRM
+      
         confirm_msg = receive_message(sock)
         if not confirm_msg:
             raise ValueError("Connection closed, no confirm received")
@@ -220,7 +212,7 @@ def handle_handshake_init(msg: dict, sock, addr) -> None:
             "signature":           conf["signature"],
         })
 
-        # Handshake complete — store results
+      
         store_session_key(peer_id, sts.session_key)
         _update_peer_key(peer_id, sts)
 
@@ -257,9 +249,6 @@ def handle_handshake_init(msg: dict, sock, addr) -> None:
         sts.destroy()
 
 
-# ---------------------------------------------------------------------------
-# VERIFY_CONFIRM handler — peer says they accepted the verification code
-# ---------------------------------------------------------------------------
 
 def handle_verify_confirm(msg: dict, sock, addr) -> None:
     """
@@ -273,7 +262,7 @@ def handle_verify_confirm(msg: dict, sock, addr) -> None:
 
     app_state.verify_confirmed_by_peer.add(peer_id)
 
-    # If we already confirmed our side, mutual verification is complete
+  
     if peer_id in app_state.verify_confirmed_by_me:
         peer = app_state.peers.get(peer_id)
         if peer:
@@ -295,9 +284,6 @@ def handle_verify_confirm(msg: dict, sock, addr) -> None:
         logger.info(f"Peer {peer_id} confirmed, awaiting local confirmation")
 
 
-# ---------------------------------------------------------------------------
-# VERIFY_REJECT handler — peer says they rejected the verification code
-# ---------------------------------------------------------------------------
 
 def handle_verify_reject(msg: dict, sock, addr) -> None:
     """
@@ -316,7 +302,7 @@ def handle_verify_reject(msg: dict, sock, addr) -> None:
     if peer:
         peer.trusted = False
 
-    # Destroy the session — it may be compromised
+   
     remove_session(peer_id)
 
     app_state.add_status(

@@ -20,9 +20,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 
-# ---------------------------------------------------------------------------
-# HKDF — Session key derivation from ECDH shared secret
-# ---------------------------------------------------------------------------
+
 
 def hkdf_derive_key(shared_secret: bytes,
                     salt: bytes = None,
@@ -51,9 +49,7 @@ def hkdf_derive_key(shared_secret: bytes,
     return hkdf.derive(shared_secret)
 
 
-# ---------------------------------------------------------------------------
-# PBKDF2 — Vault key derivation from user password
-# ---------------------------------------------------------------------------
+
 
 def generate_salt(length: int = 16) -> bytes:
     """Generate a cryptographically random salt."""

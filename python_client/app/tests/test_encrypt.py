@@ -93,7 +93,7 @@ class TestAESGCM:
         """Ciphertext should be nonce + encrypted data (at least 28 bytes)."""
         key = os.urandom(32)
         ciphertext = encrypt(key, b"test")
-        # 12 bytes nonce + 4 bytes data + 16 bytes tag = 32 bytes minimum
+
         assert len(ciphertext) >= NONCE_SIZE + 16
 
     def test_invalid_key_length(self):

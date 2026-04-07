@@ -35,9 +35,7 @@ from app.core.session import (
 )
 
 
-# ===================================================================
-# Test: RSA Key Generation & Serialization
-# ===================================================================
+
 
 class TestRSAKeys:
 
@@ -118,9 +116,7 @@ class TestRSAKeys:
         assert get_fingerprint(pub1) != get_fingerprint(pub2)
 
 
-# ===================================================================
-# Test: RSA-PSS Signing & Verification
-# ===================================================================
+
 
 class TestSigning:
 
@@ -163,9 +159,7 @@ class TestSigning:
         assert verify_signature(pub, b"", sig) is True
 
 
-# ===================================================================
-# Test: SHA-256 Hashing
-# ===================================================================
+
 
 class TestHashing:
 
@@ -194,9 +188,6 @@ class TestHashing:
             os.unlink(path)
 
 
-# ===================================================================
-# Test: Key Derivation Functions
-# ===================================================================
 
 class TestKDF:
 
@@ -252,9 +243,7 @@ class TestKDF:
         assert generate_salt() != generate_salt()
 
 
-# ===================================================================
-# Test: Ephemeral ECDH Key Operations
-# ===================================================================
+
 
 class TestECDH:
 
@@ -289,9 +278,7 @@ class TestECDH:
         assert secret_ab != secret_ac
 
 
-# ===================================================================
-# Test: Full STS Handshake
-# ===================================================================
+
 
 class TestSTSHandshake:
     """

@@ -37,18 +37,15 @@ from app.crypto.kdf import pbkdf2_derive_key, generate_salt
 
 logger = logging.getLogger(__name__)
 
-# Default vault directory
+
 VAULT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "vault")
 
-# Sizes (bytes)
+
 SALT_SIZE = 16       # PBKDF2 salt
 NONCE_SIZE = 12      # 96-bit GCM nonce
 TAG_SIZE = 16        # 128-bit GCM authentication tag
 
-# ---------------------------------------------------------------------------
-# In-memory vault key — derived from password + saved salt at startup.
-# Cleared on shutdown.  Never written to disk.
-# ---------------------------------------------------------------------------
+
 _vault_key: Optional[bytes] = None
 
 
@@ -58,9 +55,6 @@ def get_vault_dir() -> str:
     return os.path.abspath(VAULT_DIR)
 
 
-# ---------------------------------------------------------------------------
-# Vault initialization & key management
-# ---------------------------------------------------------------------------
 
 def is_vault_initialized() -> bool:
     """Return True if a vault password has been set up previously."""
@@ -89,8 +83,7 @@ def initialize_vault(password: str) -> bytes:
     salt = generate_salt(SALT_SIZE)
     key = pbkdf2_derive_key(password, salt)
 
-    # Create a verification token: encrypt a known sentinel so we can
-    # detect wrong passwords at unlock time instead of failing silently.
+   
     sentinel = b"vault-password-ok"
     verify_blob = vault_encrypt_data(key, sentinel)
 
@@ -131,12 +124,11 @@ def unlock_vault(password: str) -> bytes:
     salt = bytes.fromhex(config["salt"])
     key = pbkdf2_derive_key(password, salt)
 
-    # Verify the password by decrypting the stored sentinel.
-    # If the password is wrong, AESGCM will raise InvalidTag.
+   
     verify_hex = config.get("verify_token")
     if verify_hex:
         verify_blob = bytes.fromhex(verify_hex)
-        vault_decrypt_data(key, verify_blob)  # raises InvalidTag on wrong pw
+        vault_decrypt_data(key, verify_blob) 
 
     set_vault_key(key)
     logger.info("Vault unlocked (key derived from password + stored salt).")
@@ -204,9 +196,7 @@ def change_vault_password(old_password: str, new_password: str) -> list[str]:
             try:
                 plaintext = vault_decrypt_data(old_key, old_blob)
             except InvalidTag:
-                # If one file is undecryptable (mixed legacy data or corruption),
-                # continue re-encrypting decryptable files so valid password changes
-                # do not fail entirely.
+               
                 skipped_files.append(os.path.basename(original_path))
                 logger.warning(
                     "Skipping undecryptable vault file during key rotation: "
@@ -288,9 +278,6 @@ def _require_key(key: Optional[bytes] = None) -> bytes:
     return k
 
 
-# ---------------------------------------------------------------------------
-# Low-level encryption helpers
-# ---------------------------------------------------------------------------
 
 def vault_encrypt_data(key: bytes, plaintext: bytes) -> bytes:
     """
@@ -322,11 +309,6 @@ def vault_decrypt_data(key: bytes, blob: bytes) -> bytes:
     ct_and_tag = blob[NONCE_SIZE:]
     aesgcm = AESGCM(key)
     return aesgcm.decrypt(nonce, ct_and_tag, None)
-
-
-# ---------------------------------------------------------------------------
-# Password-based encrypt / decrypt  (self-contained blobs, used by tests)
-# ---------------------------------------------------------------------------
 
 def vault_encrypt(password: str, plaintext: bytes) -> bytes:
     """
@@ -364,9 +346,6 @@ def vault_decrypt(password: str, vault_blob: bytes) -> bytes:
     return aesgcm.decrypt(nonce, ct_and_tag, None)
 
 
-# ---------------------------------------------------------------------------
-# File-level vault operations  (use in-memory key by default)
-# ---------------------------------------------------------------------------
 
 def vault_store_file(filename: str, data: bytes,
                      key: Optional[bytes] = None) -> str:
@@ -449,9 +428,7 @@ def vault_delete_file(filename: str) -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
-# JSON data vault (structured data encrypted at rest)
-# ---------------------------------------------------------------------------
+
 
 def vault_store_json(name: str, data: Any,
                      key: Optional[bytes] = None) -> str:
@@ -469,9 +446,7 @@ def vault_retrieve_json(name: str,
     return json.loads(raw.decode("utf-8"))
 
 
-# ---------------------------------------------------------------------------
-# Trust store (peer fingerprint trust records)
-# ---------------------------------------------------------------------------
+
 
 def save_trust_records(trust_records: dict,
                        key: Optional[bytes] = None) -> None:
@@ -486,9 +461,7 @@ def load_trust_records(key: Optional[bytes] = None) -> dict:
     return records if records else {}
 
 
-# ---------------------------------------------------------------------------
-# Received-files manifest (plaintext metadata so peers can look up by hash)
-# ---------------------------------------------------------------------------
+
 
 def _get_manifest_path() -> str:
     return os.path.join(get_vault_dir(), "vault_manifest.json")

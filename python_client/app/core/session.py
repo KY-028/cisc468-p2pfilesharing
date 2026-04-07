@@ -27,9 +27,7 @@ from app.crypto.sign import sign_data, verify_signature
 from app.crypto.kdf import hkdf_derive_key
 
 
-# ---------------------------------------------------------------------------
-# Ephemeral ECDH Key Generation
-# ---------------------------------------------------------------------------
+
 
 def generate_ephemeral_keypair():
     """
@@ -76,9 +74,6 @@ def compute_shared_secret(our_private_key, their_public_key) -> bytes:
     return our_private_key.exchange(ec.ECDH(), their_public_key)
 
 
-# ---------------------------------------------------------------------------
-# STS Session State Machine
-# ---------------------------------------------------------------------------
 
 class STSSession:
     """
@@ -115,28 +110,26 @@ class STSSession:
         self.rsa_private_key = rsa_private_key
         self.rsa_public_key = rsa_public_key
 
-        # Ephemeral ECDH key pair (generated fresh for each session)
+       
         self._ecdh_private, self._ecdh_public = generate_ephemeral_keypair()
 
-        # Peer's data (set during handshake)
+    
         self.peer_ecdh_public = None
         self.peer_rsa_public = None
 
-        # Derived session key (set when handshake completes)
+       
         self.session_key = None
 
-        # State tracking
-        self.role = None       # "initiator" or "responder"
+      
+        self.role = None       
         self.complete = False
 
-    # -- Serialized form of our ephemeral public key --
+ 
     @property
     def our_ephemeral_pub_bytes(self) -> bytes:
         return serialize_ec_public_key(self._ecdh_public)
 
-    # ---------------------------------------------------------------
-    # INITIATOR side
-    # ---------------------------------------------------------------
+  
 
     def create_init(self) -> dict:
         """
@@ -170,24 +163,24 @@ class STSSession:
         """
         from app.crypto.keys import deserialize_public_key
 
-        # Deserialize Bob's keys
+      
         peer_eph_bytes = payload["ephemeral_public_key"]
         self.peer_ecdh_public = deserialize_ec_public_key(peer_eph_bytes)
         self.peer_rsa_public = deserialize_public_key(payload["long_term_public_key"])
 
-        # Verify Bob's signature: Sig_Bob(bob_eph || alice_eph)
+    
         signed_data = peer_eph_bytes + self.our_ephemeral_pub_bytes
         if not verify_signature(self.peer_rsa_public, signed_data,
                                 payload["signature"]):
             raise ValueError("STS handshake failed: responder signature invalid")
 
-        # Compute shared secret and derive session key
+     
         shared_secret = compute_shared_secret(self._ecdh_private,
                                               self.peer_ecdh_public)
         self.session_key = hkdf_derive_key(shared_secret)
         self.complete = True
 
-        # Create our signature: Sig_Alice(alice_eph || bob_eph)
+    
         our_signed_data = self.our_ephemeral_pub_bytes + peer_eph_bytes
         from app.crypto.keys import serialize_public_key
         return {
@@ -195,9 +188,7 @@ class STSSession:
             "signature": sign_data(self.rsa_private_key, our_signed_data),
         }
 
-    # ---------------------------------------------------------------
-    # RESPONDER side
-    # ---------------------------------------------------------------
+ 
 
     def handle_init(self, payload: dict) -> dict:
         """
@@ -212,11 +203,11 @@ class STSSession:
         """
         self.role = "responder"
 
-        # Deserialize Alice's ephemeral key
+   
         peer_eph_bytes = payload["ephemeral_public_key"]
         self.peer_ecdh_public = deserialize_ec_public_key(peer_eph_bytes)
 
-        # Sign: Sig_Bob(bob_eph || alice_eph)
+   
         signed_data = self.our_ephemeral_pub_bytes + peer_eph_bytes
         from app.crypto.keys import serialize_public_key
         return {
@@ -239,25 +230,22 @@ class STSSession:
         """
         from app.crypto.keys import deserialize_public_key
 
-        # Deserialize Alice's long-term key
+    
         self.peer_rsa_public = deserialize_public_key(payload["long_term_public_key"])
 
-        # Verify Alice's signature: Sig_Alice(alice_eph || bob_eph)
+     
         peer_eph_bytes = serialize_ec_public_key(self.peer_ecdh_public)
         signed_data = peer_eph_bytes + self.our_ephemeral_pub_bytes
         if not verify_signature(self.peer_rsa_public, signed_data,
                                 payload["signature"]):
             raise ValueError("STS handshake failed: initiator signature invalid")
 
-        # Compute shared secret and derive session key
+    
         shared_secret = compute_shared_secret(self._ecdh_private,
                                               self.peer_ecdh_public)
         self.session_key = hkdf_derive_key(shared_secret)
         self.complete = True
 
-    # ---------------------------------------------------------------
-    # Cleanup
-    # ---------------------------------------------------------------
 
     def destroy(self) -> None:
         """

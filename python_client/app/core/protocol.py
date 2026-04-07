@@ -24,15 +24,11 @@ import base64
 from typing import Any
 
 
-# ---------------------------------------------------------------------------
-# Protocol version — included in every message for compatibility checks
-# ---------------------------------------------------------------------------
+
 PROTOCOL_VERSION = "1.0"
 
 
-# ---------------------------------------------------------------------------
-# Message types — all valid type strings used in the "type" field
-# ---------------------------------------------------------------------------
+
 class MessageType:
     """Enum-like class for message types. Not a real enum for JSON simplicity."""
     PEER_ANNOUNCE       = "PEER_ANNOUNCE"
@@ -50,18 +46,13 @@ class MessageType:
     VERIFY_REJECT       = "VERIFY_REJECT"
     ERROR               = "ERROR"
 
-
-# Set of all valid message types (used for validation)
 VALID_MESSAGE_TYPES = {
     v for k, v in vars(MessageType).items()
     if not k.startswith("_")
 }
 
 
-# ---------------------------------------------------------------------------
-# Required payload fields per message type
-# Messages without entries here only require version, type, and timestamp.
-# ---------------------------------------------------------------------------
+
 REQUIRED_PAYLOAD_FIELDS: dict[str, list[str]] = {
     MessageType.PEER_ANNOUNCE:         ["peer_id", "port"],
     MessageType.KEY_EXCHANGE_INIT:     ["peer_id", "ephemeral_public_key"],
@@ -81,17 +72,13 @@ REQUIRED_PAYLOAD_FIELDS: dict[str, list[str]] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
+
 class ProtocolError(Exception):
     """Raised when a message fails validation."""
     pass
 
 
-# ---------------------------------------------------------------------------
-# Message construction
-# ---------------------------------------------------------------------------
+
 def create_message(msg_type: str, payload: dict[str, Any]) -> dict:
     """
     Build a protocol message dict.
@@ -117,9 +104,7 @@ def create_message(msg_type: str, payload: dict[str, Any]) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Validation
-# ---------------------------------------------------------------------------
+
 def validate_message(msg: dict) -> dict:
     """
     Validate a message dict.
@@ -139,23 +124,23 @@ def validate_message(msg: dict) -> dict:
     Raises:
         ProtocolError: If any validation check fails.
     """
-    # Check top-level fields
+   
     for field in ("version", "type", "timestamp", "payload"):
         if field not in msg:
             raise ProtocolError(f"Missing required field: '{field}'")
 
-    # Check version
+ 
     if msg["version"] != PROTOCOL_VERSION:
         raise ProtocolError(
             f"Unsupported protocol version: {msg['version']} "
             f"(expected {PROTOCOL_VERSION})"
         )
 
-    # Check type
+ 
     if msg["type"] not in VALID_MESSAGE_TYPES:
         raise ProtocolError(f"Unknown message type: {msg['type']}")
 
-    # Check required payload fields
+  
     required = REQUIRED_PAYLOAD_FIELDS.get(msg["type"], [])
     payload = msg["payload"]
     for field in required:
@@ -167,9 +152,7 @@ def validate_message(msg: dict) -> dict:
     return msg
 
 
-# ---------------------------------------------------------------------------
-# Serialization: dict <-> JSON string
-# ---------------------------------------------------------------------------
+
 def serialize(msg: dict) -> str:
     """
     Serialize a message dict to a JSON string.
@@ -188,7 +171,7 @@ def serialize(msg: dict) -> str:
     """
     validate_message(msg)
 
-    # Deep-copy the payload and encode any bytes values to base64
+   
     encoded_payload = _encode_binary_fields(msg["payload"])
 
     serializable = {
@@ -226,11 +209,7 @@ def deserialize(json_str: str) -> dict:
     return validated_msg
 
 
-# ---------------------------------------------------------------------------
-# Binary field encoding helpers
-# ---------------------------------------------------------------------------
 
-# Fields that should be treated as base64-encoded binary data
 BINARY_FIELD_NAMES = {"public_key", "signature", "data", "nonce",
                       "ciphertext", "hmac", "new_public_key",
                       "ephemeral_public_key", "long_term_public_key",

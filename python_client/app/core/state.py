@@ -83,49 +83,43 @@ class AppState:
     """
 
     def __init__(self):
-        # --- Identity ---
-        # Generate a random peer ID on startup.
-        # In later phases, this will be tied to the RSA key pair.
+      
         self.peer_id: str = f"peer-{uuid.uuid4().hex[:8]}"
         self.display_name: str = self.peer_id
         self.public_key_pem: Optional[str] = None    # RSA-2048 public key (PEM)
         self.private_key_pem: Optional[str] = None   # RSA-2048 private key (PEM)
         self.fingerprint: Optional[str] = None       # SHA-256 fingerprint of public key
 
-        # --- Peers ---
-        # Maps peer_id -> PeerInfo for all discovered peers.
+     
         self.peers: dict[str, PeerInfo] = {}
 
-        # --- Files ---
-        # List of files this peer is sharing.
+     
         self.shared_files: list[SharedFile] = []
 
-        # --- Transfers ---
-        # List of all transfer records (active and completed).
+     
         self.transfers: list[TransferRecord] = []
 
-        # --- Consent ---
-        # Pending consent requests from other peers.
+     
+      
         self.pending_consents: list[ConsentRequest] = []
 
-        # --- Status log ---
-        # Recent status/error messages for the UI.
+     
         self.status_log: list[StatusMessage] = []
 
-        # List of peers awaiting manual verification code confirmation
+      
         self.pending_verifications: list[dict] = []
 
-        # Mutual verification tracking
+
         self.verify_confirmed_by_me: set[str] = set()    # peer_ids we locally confirmed
         self.verify_confirmed_by_peer: set[str] = set()  # peer_ids that sent us VERIFY_CONFIRM
 
-        # Vault — True once the user has entered the correct password
+      
         self.vault_unlocked: bool = False
 
-        # Directory for persisting trust records (set by init_trust_storage)
+      
         self._trust_file: Optional[str] = None
 
-    # ----- Trust persistence -----
+    
 
     def init_trust_storage(self, data_dir: str) -> None:
         """Set the file path for trust persistence and load saved records."""
@@ -142,8 +136,7 @@ class AppState:
             for peer_id, info in records.items():
                 peer = self.peers.get(peer_id)
                 if not peer:
-                    # Create an offline placeholder so trust survives until
-                    # the peer is re-discovered via mDNS.
+                   
                     peer = PeerInfo(
                         peer_id=peer_id,
                         display_name=peer_id,
@@ -190,7 +183,7 @@ class AppState:
             level=level,
             timestamp=time.time()
         ))
-        # Keep only the last 50 messages to avoid unbounded growth.
+  
         if len(self.status_log) > 50:
             self.status_log = self.status_log[-50:]
 
@@ -224,8 +217,5 @@ class AppState:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Module-level singleton.
-# Import `from app.core.state import app_state` anywhere to access it.
-# ---------------------------------------------------------------------------
+
 app_state = AppState()

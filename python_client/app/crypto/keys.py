@@ -16,9 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization, hashes
 
 
-# ---------------------------------------------------------------------------
-# Key Generation
-# ---------------------------------------------------------------------------
+
 
 def generate_rsa_keypair():
     """
@@ -35,9 +33,6 @@ def generate_rsa_keypair():
     return private_key, public_key
 
 
-# ---------------------------------------------------------------------------
-# Serialization: key objects <-> PEM bytes
-# ---------------------------------------------------------------------------
 
 def serialize_public_key(public_key) -> bytes:
     """
@@ -68,9 +63,7 @@ def deserialize_public_key(pem_bytes: bytes):
     return serialization.load_pem_public_key(pem_bytes)
 
 
-# ---------------------------------------------------------------------------
-# Private key persistence
-# ---------------------------------------------------------------------------
+
 
 def save_private_key(private_key, path: str, password: bytes = None) -> None:
     """
@@ -94,7 +87,7 @@ def save_private_key(private_key, path: str, password: bytes = None) -> None:
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=encryption,
     )
-    # Write with restrictive permissions (owner read/write only)
+   
     with open(path, "wb") as f:
         f.write(pem_data)
 
@@ -119,9 +112,6 @@ def load_private_key(path: str, password: bytes = None):
     return serialization.load_pem_private_key(pem_data, password=password)
 
 
-# ---------------------------------------------------------------------------
-# Fingerprinting
-# ---------------------------------------------------------------------------
 
 def get_fingerprint(public_key) -> str:
     """

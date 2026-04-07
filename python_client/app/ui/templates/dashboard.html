@@ -4,9 +4,7 @@
 {% block content %}
 <div class="app-layout">
 
-    <!-- ============================================================ -->
-    <!-- LEFT SIDEBAR — Peer list with color-coded status              -->
-    <!-- ============================================================ -->
+
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <h2 class="sidebar-title">Peers</h2>
@@ -17,14 +15,12 @@
         </div>
     </aside>
 
-    <!-- ============================================================ -->
-    <!-- MAIN CONTENT — Changes based on context                       -->
-    <!-- ============================================================ -->
+
     <div class="main-panel">
 
-        <!-- Default view: my files + status -->
+
         <div id="view-home" class="view active">
-            <!-- My Shared Files -->
+
             <section class="card">
                 <div class="card-header">
                     <h2><span class="icon">📁</span> My Shared Files</h2>
@@ -152,9 +148,7 @@
     </div>
 </div>
 
-<!-- ================================================================ -->
-<!-- CONSENT MODAL — Full-screen overlay for consent prompts           -->
-<!-- ================================================================ -->
+
 <div id="consent-modal" class="modal hidden">
     <div class="modal-backdrop"></div>
     <div class="modal-dialog">
@@ -171,9 +165,7 @@
     </div>
 </div>
 
-<!-- ================================================================ -->
-<!-- VERIFICATION MODAL — Compare safety numbers with peer             -->
-<!-- ================================================================ -->
+
 <div id="verify-modal" class="modal hidden">
     <div class="modal-backdrop" id="verify-modal-backdrop"></div>
     <div class="modal-dialog verify-dialog">

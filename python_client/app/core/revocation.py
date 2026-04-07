@@ -33,8 +33,6 @@ from app.network.transport import send_message
 
 logger = logging.getLogger(__name__)
 
-# Key file path is resolved dynamically from app_state so it always
-# matches whichever data_{ip}_{port}/ directory _init_identity chose.
 
 
 def rotate_key() -> dict:
@@ -65,37 +63,34 @@ def rotate_key() -> dict:
     }
     logger.info(f"revocation.rotate_key → generating new RSA-2048 key, old fp={app_state.fingerprint[:16]}…")
 
-    # Get the old private key for cross-signing
+   
     old_private_key = getattr(app_state, '_private_key', None)
     if not old_private_key:
         result["errors"].append("No existing private key found.")
         return result
 
-    # Step 1: Generate new key pair
+  
     new_private_key, new_public_key = generate_rsa_keypair()
     new_pub_pem = serialize_public_key(new_public_key)
     new_fingerprint = get_fingerprint(new_public_key)
     result["new_fingerprint"] = new_fingerprint
 
-    # Step 2: Sign the new public key with the OLD private key
-    # This proves that the holder of the old key authorized the rotation
+   
     cross_signature = sign_data(old_private_key, new_pub_pem)
 
-    # Step 3: Archive old key, save new key
-    key_file = app_state.private_key_pem  # path set by _init_identity
+    
+    key_file = app_state.private_key_pem  
     data_dir = os.path.dirname(key_file)
     old_key_file = os.path.join(data_dir, "identity_key.old.pem")
     os.makedirs(data_dir, exist_ok=True)
     if os.path.exists(key_file):
-        # Keep one backup of the old key
+     
         if os.path.exists(old_key_file):
             os.remove(old_key_file)
         os.rename(key_file, old_key_file)
 
     save_private_key(new_private_key, key_file)
-    app_state.private_key_pem = key_file  # path unchanged after rotation
-
-    # Step 4: Update app_state
+    app_state.private_key_pem = key_file 
     app_state._private_key = new_private_key
     app_state._public_key = new_public_key
     app_state.public_key_pem = new_pub_pem.decode("utf-8")
@@ -107,7 +102,7 @@ def rotate_key() -> dict:
         level="success"
     )
 
-    # Invalidate all existing sessions (they were authenticated with the old key)
+    
     from app.core.sessions import clear_all_sessions
     clear_all_sessions()
     app_state.add_status(
@@ -115,10 +110,7 @@ def rotate_key() -> dict:
         level="info"
     )
 
-    # Local trust reset after identity rotation:
-    # - online peers must be re-verified (downgrade to untrusted)
-    # - offline trusted placeholders are removed
-    #   because trust can no longer be considered valid for the new key
+  
     online_downgraded = 0
     offline_removed = 0
     from app.storage.manifests import clear_manifest
@@ -147,7 +139,7 @@ def rotate_key() -> dict:
         level="warning"
     )
 
-    # Step 5: Notify all known peers
+ 
     known_peers = list(app_state.peers.items())
     for peer_id, peer in known_peers:
         try:
@@ -175,7 +167,7 @@ def _notify_peer_of_revocation(peer, new_pub_pem: bytes,
         new_public_key=new_pub_pem,
         reason="key_rotation"
     )
-    # The protocol layer automatically encodes bytes fields
+   
     msg["payload"]["cross_signature"] = cross_signature
     msg["payload"]["old_fingerprint"] = getattr(app_state, '_old_fingerprint',
                                                  app_state.fingerprint)
@@ -210,7 +202,7 @@ def handle_revoke_key(msg: dict, sock, addr) -> None:
         )
         return
 
-    # Verify cross-signature if we have the old key
+   
     if peer.public_key_pem and cross_sig:
         try:
             from app.crypto.keys import deserialize_public_key
@@ -242,14 +234,14 @@ def handle_revoke_key(msg: dict, sock, addr) -> None:
             level="warning"
         )
 
-    # Update the peer's key (mark as untrusted until re-verified)
+  
     from app.crypto.keys import deserialize_public_key as deser_pub
     try:
         new_pub_key = deser_pub(new_pub_pem)
         new_fingerprint = get_fingerprint(new_pub_key)
         peer.public_key_pem = new_pub_pem.decode("utf-8")
         peer.fingerprint = new_fingerprint
-        peer.trusted = False  # Must re-verify!
+        peer.trusted = False
 
         app_state.add_status(
             f"⚠️ Peer {peer_id} changed their key. New fingerprint: "
@@ -262,6 +254,6 @@ def handle_revoke_key(msg: dict, sock, addr) -> None:
             level="error"
         )
 
-    # Invalidate the existing session with this peer
+   
     from app.core.sessions import remove_session
     remove_session(peer_id)
