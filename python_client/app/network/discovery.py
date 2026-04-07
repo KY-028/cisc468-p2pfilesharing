@@ -20,7 +20,7 @@ from app.core.state import app_state, PeerInfo
 
 logger = logging.getLogger(__name__)
 
-# mDNS service type for our P2P application
+
 SERVICE_TYPE = "_p2pshare._tcp.local."
 
 
@@ -56,10 +56,10 @@ class PeerDiscovery:
         """
         self._zeroconf = Zeroconf()
 
-        # Get our local IP address for the service registration
+       
         local_ip = self._get_local_ip()
 
-        # Build the service info for this peer
+   
         service_name = f"{self.peer_id}.{SERVICE_TYPE}"
         self._service_info = ServiceInfo(
             type_=SERVICE_TYPE,
@@ -71,7 +71,7 @@ class PeerDiscovery:
             },
         )
 
-        # Register our service (advertise)
+  
         self._zeroconf.register_service(self._service_info)
         logger.info(f"mDNS: Advertising as '{service_name}' on {local_ip}:{self.tcp_port}")
         app_state.add_status(
@@ -79,7 +79,7 @@ class PeerDiscovery:
             level="success"
         )
 
-        # Start browsing for other peers
+     
         self._browser = ServiceBrowser(
             self._zeroconf,
             SERVICE_TYPE,
@@ -109,23 +109,22 @@ class PeerDiscovery:
         for our purposes).
         """
         if state_change == ServiceStateChange.Added:
-            # Peer appeared — look up its details
+          
             info = zeroconf.get_service_info(service_type, name, timeout=3000)
             if info is None:
                 return
 
             peer_id = self._extract_peer_id(info)
             if peer_id == self.peer_id:
-                return  # Don't discover ourselves
+                return 
 
-            # Get the first IPv4 address
+           
             addresses = info.parsed_addresses()
             if not addresses:
                 return
-            address = addresses[0]  # Use the first address
+            address = addresses[0] 
 
-            # Deduplicate stale identities advertising the same endpoint.
-            # One address:port should map to one peer identity.
+        
             duplicates_removed = []
             for existing_peer_id, existing_peer in list(app_state.peers.items()):
                 if existing_peer_id == peer_id:
@@ -150,7 +149,7 @@ class PeerDiscovery:
                     level="warning"
                 )
 
-            # Preserve trusted status if peer was previously known
+          
             existing = app_state.peers.get(peer_id)
             trusted = existing.trusted if existing else False
             fingerprint = existing.fingerprint if existing else None
@@ -181,7 +180,7 @@ class PeerDiscovery:
             logger.info(f"mDNS: Discovered {peer_id} at {address}:{info.port}")
 
         elif state_change == ServiceStateChange.Removed:
-            # Peer disappeared — mark offline instead of removing
+    
             peer_id = self._extract_peer_id_from_name(name)
             if peer_id and peer_id in app_state.peers:
                 app_state.peers[peer_id].online = False
@@ -197,7 +196,7 @@ class PeerDiscovery:
 
     def _extract_peer_id_from_name(self, name: str) -> str:
         """Extract peer_id from the service name (the part before the service type)."""
-        # Name format: "peer-abc._p2pshare._tcp.local."
+
         return name.replace(f".{SERVICE_TYPE}", "").strip(".")
 
     def _get_local_ip(self) -> str:

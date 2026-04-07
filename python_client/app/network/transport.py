@@ -24,17 +24,14 @@ from app.core.protocol import serialize, deserialize, ProtocolError
 
 logger = logging.getLogger(__name__)
 
-# Maximum message size: 64 MB (to prevent memory abuse)
+
 MAX_MESSAGE_SIZE = 64 * 1024 * 1024
 
-# Length prefix: 4 bytes, big-endian unsigned int
+
 HEADER_FORMAT = "!I"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
 
-# ---------------------------------------------------------------------------
-# Low-level send/receive over an open socket
-# ---------------------------------------------------------------------------
 
 def send_message(sock: socket.socket, msg: dict) -> None:
     """
@@ -75,10 +72,10 @@ def receive_message(sock: socket.socket) -> Optional[dict]:
         ProtocolError: If the message is invalid.
         ConnectionError: If the connection is broken mid-read.
     """
-    # Read the 4-byte header
+   
     header_data = _recv_exactly(sock, HEADER_SIZE)
     if header_data is None:
-        return None  # Connection closed
+        return None  
 
     length = struct.unpack(HEADER_FORMAT, header_data)[0]
 
@@ -88,7 +85,7 @@ def receive_message(sock: socket.socket) -> Optional[dict]:
     if length == 0:
         raise ProtocolError("Empty message received")
 
-    # Read the JSON payload
+    
     payload_data = _recv_exactly(sock, length)
     if payload_data is None:
         raise ConnectionError("Connection closed while reading message body")
@@ -109,15 +106,12 @@ def _recv_exactly(sock: socket.socket, num_bytes: int) -> Optional[bytes]:
         chunk = sock.recv(num_bytes - len(data))
         if not chunk:
             if not data:
-                return None  # Clean close
+                return None  
             raise ConnectionError("Connection closed mid-read")
         data.extend(chunk)
     return bytes(data)
 
 
-# ---------------------------------------------------------------------------
-# One-shot send: connect, send one message, close
-# ---------------------------------------------------------------------------
 
 def send_to_peer(address: str, port: int, msg: dict, timeout: float = 10.0) -> None:
     """
@@ -137,9 +131,6 @@ def send_to_peer(address: str, port: int, msg: dict, timeout: float = 10.0) -> N
         send_message(sock, msg)
 
 
-# ---------------------------------------------------------------------------
-# TCP Server: listens for incoming connections
-# ---------------------------------------------------------------------------
 
 class TCPServer:
     """
@@ -180,7 +171,7 @@ class TCPServer:
         self._server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._server_socket.bind((self.host, self.port))
         self._server_socket.listen(5)
-        self._server_socket.settimeout(1.0)  # So we can check _running periodically
+        self._server_socket.settimeout(1.0)  
         self._running = True
 
         self._thread = threading.Thread(target=self._accept_loop, daemon=True)
@@ -207,7 +198,7 @@ class TCPServer:
         while self._running:
             try:
                 client_sock, client_addr = self._server_socket.accept()
-                # Handle each connection in its own thread
+               
                 t = threading.Thread(
                     target=self._handle_client,
                     args=(client_sock, client_addr),
@@ -215,12 +206,11 @@ class TCPServer:
                 )
                 t.start()
             except socket.timeout:
-                continue  # Check _running flag and loop
+                continue 
             except OSError:
                 if self._running:
                     logger.error("Server socket error", exc_info=True)
-                break  # Socket was closed
-
+                break  
     def _handle_client(self, client_sock: socket.socket, client_addr: tuple) -> None:
         """Wrapper that calls the handler and ensures the socket is closed."""
         try:

@@ -37,7 +37,7 @@ def generate_verification_code(fingerprint_a: str, fingerprint_b: str) -> Option
 
     combined = "\n".join(sorted([fingerprint_a, fingerprint_b]))
     code_hash = hashlib.sha256(combined.encode()).hexdigest()
-    code_int = int(code_hash[:24], 16)  # 96 bits for a 30-digit display code
+    code_int = int(code_hash[:24], 16)  
     code_digits = str(code_int).zfill(30)[:30]
     return " ".join(code_digits[i:i + 5] for i in range(0, 30, 5))
 
@@ -76,7 +76,7 @@ def verify_received_file(file_data: bytes, expected_hash: str,
     }
     logger.info(f"verification.verify_received_file → checking hash + owner sig for {owner_id}'s file (hash={expected_hash[:12]}…)")
 
-    # Step 1: Verify hash
+
     actual_hash = sha256_hash(file_data)
     result["actual_hash"] = actual_hash
     result["hash_valid"] = actual_hash == expected_hash
@@ -86,14 +86,14 @@ def verify_received_file(file_data: bytes, expected_hash: str,
             f"Hash mismatch: expected {expected_hash[:16]}…, "
             f"got {actual_hash[:16]}…"
         )
-        return result  # No point checking signature if hash is wrong
+        return result 
 
-    # Step 2: Verify owner signature
+ 
     if not signature_b64:
         result["errors"].append("No owner signature available.")
         return result
 
-    # Look up the owner's public key
+  
     owner_pub_pem = _get_owner_public_key(owner_id)
     if not owner_pub_pem:
         result["errors"].append(

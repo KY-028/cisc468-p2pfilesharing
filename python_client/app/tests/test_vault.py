@@ -35,18 +35,13 @@ from app.storage.vault import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helper: derive a test key for key-based tests
-# ---------------------------------------------------------------------------
 
 def _test_key() -> bytes:
     """Return a deterministic 32-byte key for testing."""
     return pbkdf2_derive_key("test-password", b"fixed-salt-16!!", iterations=1000)
 
 
-# ===================================================================
-# Password-based encrypt/decrypt (self-contained blobs)
-# ===================================================================
+
 
 class TestVaultPasswordEncryption:
     """Test the per-blob password-based encrypt/decrypt layer."""
@@ -68,7 +63,7 @@ class TestVaultPasswordEncryption:
     def test_blob_format(self):
         """Blob should contain salt + nonce + ciphertext + tag."""
         blob = vault_encrypt("pw", b"test")
-        # Minimum: 16 salt + 12 nonce + 0 data + 16 tag = 44 bytes
+
         assert len(blob) >= SALT_SIZE + NONCE_SIZE + TAG_SIZE
 
     def test_each_encryption_unique(self):
@@ -88,9 +83,7 @@ class TestVaultPasswordEncryption:
             vault_decrypt("pw", b"short")
 
 
-# ===================================================================
-# Key-based encrypt/decrypt (runtime vault key)
-# ===================================================================
+
 
 class TestVaultKeyEncryption:
     """Test the key-based encryption used at runtime."""
@@ -138,14 +131,12 @@ class TestVaultKeyEncryption:
         key = _test_key()
         blob = vault_encrypt_data(key, b"important data")
         tampered = bytearray(blob)
-        tampered[NONCE_SIZE] ^= 0xFF  # flip a ciphertext byte
+        tampered[NONCE_SIZE] ^= 0xFF
         with pytest.raises(InvalidTag):
             vault_decrypt_data(key, bytes(tampered))
 
 
-# ===================================================================
-# Vault initialization lifecycle
-# ===================================================================
+
 
 class TestVaultInitialization:
     """Test first-launch setup and subsequent unlock."""
@@ -215,21 +206,21 @@ class TestVaultInitialization:
         with open(config_path, "r") as f:
             config = _json.load(f)
 
-        # Only these fields should be present
+
         assert set(config.keys()) == {"salt", "verify_token"}
 
-        # The raw password must not appear anywhere in the config
+
         config_raw = open(config_path).read()
         assert password not in config_raw
 
-        # The derived key (hex) must not appear in the config
+
         assert key.hex() not in config_raw
 
-        # Salt should be a valid 16-byte hex string
+
         salt_bytes = bytes.fromhex(config["salt"])
         assert len(salt_bytes) == 16
 
-        # Verify token should be a valid encrypted blob
+
         verify_bytes = bytes.fromhex(config["verify_token"])
         assert len(verify_bytes) >= NONCE_SIZE + TAG_SIZE
 
@@ -324,7 +315,7 @@ class TestVaultPasswordChange:
 
         def fail_only_on_file_decrypt(key, blob):
             call_count["n"] += 1
-            # First decrypt is verify_token; second is first vault file blob.
+
             if call_count["n"] == 2:
                 raise InvalidTag()
             return original_decrypt(key, blob)
@@ -359,9 +350,8 @@ class TestVaultPasswordChange:
             vault_retrieve_file("test_bad.txt")
 
 
-# ===================================================================
-# File-level vault operations (key-based)
-# ===================================================================
+
+
 
 class TestVaultFileStorage:
     """Test file-level vault operations."""
@@ -372,7 +362,7 @@ class TestVaultFileStorage:
         set_vault_key(self.key)
 
     def teardown_method(self):
-        # Clean up test files
+
         for f in os.listdir(self.vault_dir):
             if f.startswith("test_") and f.endswith(".vault"):
                 os.remove(os.path.join(self.vault_dir, f))
@@ -399,7 +389,7 @@ class TestVaultFileStorage:
 
     def test_explicit_key_parameter(self):
         """Passing key= explicitly should bypass the module-level key."""
-        lock_vault()  # no module-level key
+        lock_vault() 
         data = b"explicit key test"
         vault_store_file("test_explicit.txt", data, key=self.key)
         retrieved = vault_retrieve_file("test_explicit.txt", key=self.key)
@@ -431,14 +421,12 @@ class TestVaultFileStorage:
 
     def test_large_file(self):
         """Large files should encrypt and decrypt correctly."""
-        data = os.urandom(1024 * 1024)  # 1 MB
+        data = os.urandom(1024 * 1024)  
         vault_store_file("test_large.bin", data)
         assert vault_retrieve_file("test_large.bin") == data
 
 
-# ===================================================================
-# JSON data vault operations
-# ===================================================================
+
 
 class TestVaultJSON:
     """Test JSON data vault operations."""
@@ -466,9 +454,7 @@ class TestVaultJSON:
         assert vault_retrieve_json("test_json_nope") is None
 
 
-# ===================================================================
-# Trust record storage
-# ===================================================================
+
 
 class TestTrustRecords:
     """Test trust record storage."""
@@ -508,9 +494,7 @@ class TestTrustRecords:
         assert loaded == {}
 
 
-# ===================================================================
-# Vault received-file manifest
-# ===================================================================
+
 
 class TestVaultManifest:
     """Test the plaintext manifest that maps filenames to hashes."""
@@ -519,7 +503,7 @@ class TestVaultManifest:
         self.vault_dir = get_vault_dir()
         self.key = _test_key()
         set_vault_key(self.key)
-        # Clean manifest
+
         manifest_path = os.path.join(self.vault_dir, "vault_manifest.json")
         if os.path.isfile(manifest_path):
             os.remove(manifest_path)

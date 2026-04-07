@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import padding, utils
 from cryptography.exceptions import InvalidSignature
 
 
-# Standard PSS padding config used for all signatures in this app.
+
 _PSS_PADDING = padding.PSS(
     mgf=padding.MGF1(hashes.SHA256()),
     salt_length=padding.PSS.MAX_LENGTH,
@@ -63,5 +63,5 @@ def verify_signature(public_key, data: bytes, signature: bytes) -> bool:
     except InvalidSignature:
         return False
     except Exception:
-        # Catch any other crypto errors (e.g., wrong key type)
+     
         return False

@@ -53,13 +53,13 @@ def add_file(filepath: str) -> Optional[SharedFile]:
     size = os.path.getsize(filepath)
     file_hash = sha256_hash_file(filepath)
 
-    # Check if already shared (by hash)
+   
     for existing in app_state.shared_files:
         if existing.sha256_hash == file_hash:
             logger.info(f"File already shared: {filename} ({file_hash[:12]})")
             return existing
 
-    # Sign the hash with our private key (for third-party verification)
+   
     signature = None
     if hasattr(app_state, '_private_key') and app_state._private_key:
         hash_bytes = file_hash.encode("utf-8")
@@ -112,7 +112,7 @@ def scan_shared_directory() -> int:
     added = 0
     for entry in os.listdir(shared_dir):
         if entry.startswith('.'):
-            continue  # Skip hidden files like .DS_Store
+            continue  
         filepath = os.path.join(shared_dir, entry)
         if os.path.isfile(filepath):
             result = add_file(filepath)
@@ -158,7 +158,7 @@ def get_file_list_for_network() -> list[dict]:
 
 def find_received_file_by_hash(file_hash: str) -> Optional[SharedFile]:
     """Search the vault and received/ directory for a file matching the hash."""
-    # Check the vault manifest first (encrypted files)
+  
     from app.storage.vault import vault_lookup_by_hash, get_vault_dir
     match = vault_lookup_by_hash(file_hash)
     if match:
@@ -174,7 +174,7 @@ def find_received_file_by_hash(file_hash: str) -> Optional[SharedFile]:
             signature=None,
         )
 
-    # Fall back to plaintext received/ directory
+   
     received_dir = os.path.join(os.path.dirname(__file__), "..", "..", "received")
     received_dir = os.path.abspath(received_dir)
     if not os.path.isdir(received_dir):
