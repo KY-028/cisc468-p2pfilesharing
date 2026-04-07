@@ -32,6 +32,8 @@ python -m app.main
 #    → http://localhost:5001
 ```
 
+C#
+Extract Cs_Client_ready_to_run.rar, run setup.exe
 ## Running Tests
 
 ```bash
